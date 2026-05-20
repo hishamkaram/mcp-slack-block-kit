@@ -70,7 +70,14 @@ func Normalize(src string, opts Options) (string, []string) {
 	// br_tag can split a single prose line into multiple lines, so it
 	// runs before any line-pair-merging repair.
 	if l, ok := applyBRTag(lines, opts); ok { // R8
-		lines = l
+		// Re-classify after R8 because the split can promote a
+		// post-`<br>` tail like `~~~` into a fence opener that
+		// R8's own kind-guess (always LineProse / LineBlank for
+		// segments) doesn't capture. Without this, V3
+		// (unclosed-fence repair) misses the opener on pass 1
+		// and fires on pass 2, breaking idempotence. Same shape
+		// as bug_010's V4-classify fix.
+		lines = classify(reassemble(l))
 		fired.add("R8")
 	}
 	// Split-link merge collapses `[label]\n(url)` pairs. MUST precede
@@ -82,13 +89,15 @@ func Normalize(src string, opts Options) (string, []string) {
 		lines = l
 		fired.add("V8")
 	}
-	// Whitespace hygiene next: trailing whitespace can throw off
-	// every line-pattern repair below (regex anchors, peer checks).
-	if l, ok := applyTrailingWhitespace(lines, opts); ok { // C5/C9
-		lines = l
-		fired.add("C5")
-	}
-	// Line-local space repairs.
+	// Line-local space repairs. These run BEFORE C5 because C5's
+	// hard-break preservation consults startsWithListMarker — the
+	// answer must be stable across passes. If C3/C4 ran after C5,
+	// pass 1's C5 would preserve a trailing hard-break on `*A  `
+	// (not yet a list item), then C3 would turn it into `* A  `,
+	// and pass 2's C5 would now see `* A  ` (a list item) and
+	// strip — breaking idempotence. None of these line-local
+	// repairs depend on trailing-whitespace cleanup because their
+	// regexes anchor at line start.
 	if l, ok := applyATXHeaderSpace(lines, opts); ok { // V5
 		lines = l
 		fired.add("V5")
@@ -100,6 +109,12 @@ func Normalize(src string, opts Options) (string, []string) {
 	if l, ok := applyNumberedNoSpace(lines, opts); ok { // C4
 		lines = l
 		fired.add("C4")
+	}
+	// Whitespace hygiene now sees the final list-marker layout so
+	// isHardBreakContext's startsWithListMarker check is stable.
+	if l, ok := applyTrailingWhitespace(lines, opts); ok { // C5/C9
+		lines = l
+		fired.add("C5")
 	}
 	// URL hygiene and inline structure.
 	if l, ok := applyURLUnicode(lines, opts); ok { // V7

@@ -136,6 +136,59 @@ func TestApplyHTMLEntities_BroadcastTokenRoundtripSafe(t *testing.T) {
 	}
 }
 
+// TestApplyHTMLEntities_ControlCharsRejected pins the V11 safety
+// invariant: numeric entities for C0 controls, DEL, and UTF-16
+// surrogate halves must NOT decode. Decoding them would embed
+// line-changing bytes (LF/CR/TAB) into a Line's Text — violating
+// the package's per-line invariant and the documented idempotence
+// contract — or produce invalid UTF-8 (surrogates) — or inject NUL
+// bytes that Slack rejects outright.
+func TestApplyHTMLEntities_ControlCharsRejected(t *testing.T) {
+	opts := Options{DecodeHTMLEntities: true}
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{name: "NUL (decimal)", in: "a&#0;b"},
+		{name: "NUL (hex)", in: "a&#x00;b"},
+		{name: "LF (decimal)", in: "a&#10;b"},
+		{name: "LF (hex)", in: "a&#x0A;b"},
+		{name: "CR (decimal)", in: "a&#13;b"},
+		{name: "TAB (decimal)", in: "a&#9;b"},
+		{name: "DEL", in: "a&#127;b"},
+		{name: "C0 control (BEL)", in: "a&#7;b"},
+		{name: "high surrogate", in: "a&#xD800;b"},
+		{name: "low surrogate", in: "a&#xDFFF;b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := classify(tc.in)
+			out, fired := applyHTMLEntities(lines, opts)
+			if fired {
+				t.Errorf("V11 decoded a rejected entity: %q -> %q", tc.in, reassemble(out))
+			}
+			if reassemble(out) != tc.in {
+				t.Errorf("mutated input: %q -> %q", tc.in, reassemble(out))
+			}
+		})
+	}
+}
+
+// TestApplyHTMLEntities_StructuralSmugglingBlocked confirms that
+// even when the input would parse-as-paragraph-plus-blockquote if
+// the LF were decoded, V11 leaves the source untouched so goldmark
+// sees the original single line.
+func TestApplyHTMLEntities_StructuralSmugglingBlocked(t *testing.T) {
+	in := "paragraph&#10;> quote"
+	out, fired := Normalize(in, Options{DecodeHTMLEntities: true})
+	if fired != nil {
+		t.Errorf("V11 fired on control-char smuggling attempt: %v", fired)
+	}
+	if out != in {
+		t.Errorf("Normalize mutated structural-smuggle input: %q -> %q", in, out)
+	}
+}
+
 func TestApplyHTMLEntities_Idempotent(t *testing.T) {
 	opts := Options{DecodeHTMLEntities: true}
 	in := "Tom &amp; Jerry &#x21;"

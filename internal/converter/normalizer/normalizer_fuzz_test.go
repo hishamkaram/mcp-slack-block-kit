@@ -37,6 +37,13 @@ func FuzzNormalize(f *testing.F) {
 		"foo   \nbar",                                   // merged_bug_001 (3-space hard break)
 		"Use `<br>` for HTML breaks",                    // merged_bug_014 (R8/V2 in code span)
 		"`array[1](https://x.com/v2—doc)`",              // merged_bug_014 (V7 in code span)
+		// Post-fixup ultrareview regression seeds.
+		"*hello<br>   <br>**unclosed", // bug_001 (R8 whitespace-only segment)
+		"a<br>\t<br>b",                // bug_001 (R8 tab-only segment)
+		"a&#10;b",                     // bug_002 (V11 control char)
+		"a&#x0A;b",                    // bug_002 (V11 hex LF)
+		"a&#0;b",                      // bug_002 (V11 NUL)
+		"paragraph&#10;> quote",       // bug_002 (V11 structural smuggling)
 	}
 	for _, s := range seeds {
 		f.Add(s)

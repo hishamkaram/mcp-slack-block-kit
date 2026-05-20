@@ -1,6 +1,9 @@
 package normalizer
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // brTag matches `<br>`, `<br/>`, and `<br />` in any case.
 // Whitespace inside the tag is permitted (e.g. `<br />`).
@@ -101,15 +104,20 @@ func applyBRTag(lines []Line, _ Options) ([]Line, bool) {
 		// Outside tables: split the line on the surviving (not-in-
 		// code-span) `<br>` boundaries and emit each segment as its
 		// own line, preserving the visual break the author intended.
-		// Empty segments (e.g. a trailing `<br>`) become LineBlank
-		// so downstream paragraph-aware repairs (V1) don't merge
-		// them with content lines on a subsequent pass — the
-		// classifier would later re-tag them LineBlank anyway, so
-		// producing the consistent tag here is what makes the
-		// pipeline idempotent.
+		//
+		// Idempotence guard: tag any whitespace-only segment as
+		// LineBlank — not just exactly-empty ones. C5
+		// (applyTrailingWhitespace) will later strip a whitespace-
+		// only LineProse to "", producing a `{Text:"", Kind:LineProse}`
+		// state that classify() can never produce on its own
+		// (classify uses TrimSpace == ""). The mismatch means the
+		// next Normalize pass re-classifies the empty line as
+		// LineBlank, flipping V1's paragraph boundaries and
+		// violating Normalize(Normalize(s)) == Normalize(s).
+		// Mirror classify()'s rule exactly here.
 		for _, seg := range splitOnRanges(original, live) {
 			kind := LineProse
-			if seg == "" {
+			if strings.TrimSpace(seg) == "" {
 				kind = LineBlank
 			}
 			outLines = append(outLines, Line{Text: seg, Kind: kind})

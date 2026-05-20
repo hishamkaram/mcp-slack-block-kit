@@ -116,6 +116,40 @@ func TestApplyBRTag_InsideFenceUnchanged(t *testing.T) {
 	}
 }
 
+// TestApplyBRTag_WhitespaceOnlySegmentIsBlank pins the bug_001
+// regression: a whitespace-only segment between two <br> tags must
+// be tagged LineBlank, not LineProse. Otherwise C5 later strips
+// it to "" while keeping Kind=LineProse, which is a state
+// classify() never produces — pass 2 then re-classifies the empty
+// line as LineBlank and V1 paragraph boundaries diverge.
+func TestApplyBRTag_WhitespaceOnlySegmentIsBlank(t *testing.T) {
+	in := "*hello<br>   <br>**unclosed"
+	lines := classify(in)
+	out, fired := applyBRTag(lines, Options{})
+	if !fired {
+		t.Fatal("expected R8 to fire")
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected 3 segments, got %d: %v", len(out), out)
+	}
+	if out[1].Kind != LineBlank {
+		t.Errorf("middle whitespace-only segment kind = %v, want LineBlank", out[1].Kind)
+	}
+}
+
+// TestNormalize_BRWhitespaceMiddle_IsIdempotent pins the bug_001
+// end-to-end shape — R8 split with a whitespace-only middle,
+// surrounded by emphasis content that V1 would close. Without the
+// fix, V1 sees one paragraph in pass 1 and two in pass 2.
+func TestNormalize_BRWhitespaceMiddle_IsIdempotent(t *testing.T) {
+	in := "*hello<br>   <br>**unclosed"
+	out1, _ := Normalize(in, Options{})
+	out2, _ := Normalize(out1, Options{})
+	if out1 != out2 {
+		t.Errorf("not idempotent:\n once: %q\ntwice: %q", out1, out2)
+	}
+}
+
 func TestApplyBRTag_Idempotent(t *testing.T) {
 	in := "a<br>b<br/>c"
 	lines := classify(in)

@@ -65,6 +65,28 @@ func applyHTMLEntities(lines []Line, opts Options) ([]Line, bool) {
 	return lines, fired
 }
 
+// safeDecodedRune reports whether r is safe to insert into a Line's
+// Text. Rejects every C0 control character (including TAB and LF —
+// those would break the package's per-line invariant by embedding
+// line boundaries mid-Text and silently re-splitting structure on
+// the next classify() pass), DEL (0x7F), and UTF-16 surrogate
+// halves (0xD800–0xDFFF, invalid in UTF-8). Mirrors the HTML5
+// character-reference algorithm's reject list. Pinned by
+// TestApplyHTMLEntities_ControlCharsRejected and the
+// TestProperty_Idempotent_WithEntityDecode property.
+func safeDecodedRune(r rune) bool {
+	if r < 0x20 {
+		return false
+	}
+	if r == 0x7F {
+		return false
+	}
+	if r >= 0xD800 && r <= 0xDFFF {
+		return false
+	}
+	return true
+}
+
 // decodeEntities decodes whitelisted entities in s, skipping any
 // occurrence inside a backtick inline code span (per
 // inlineCodeMask).
@@ -116,6 +138,9 @@ func decodeEntities(s string) (string, bool) {
 		digits := intermediate[m[4]:m[5]]
 		n, err := strconv.ParseInt(digits, base, 32)
 		if err != nil || n < 0 || n > 0x10FFFF {
+			continue
+		}
+		if !safeDecodedRune(rune(n)) {
 			continue
 		}
 		out = append(out, intermediate[cursor:fullStart]...)

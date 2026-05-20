@@ -1,6 +1,9 @@
 package normalizer
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // splitLinkLineEnd matches a line that ends with a closing link
 // bracket (optionally followed by whitespace). The capture is the
@@ -53,6 +56,17 @@ func applySplitLink(lines []Line, _ Options) ([]Line, bool) {
 			i++
 			continue
 		}
+		// Bracket-balance guard: the line must contain a `[` BEFORE
+		// the closing `]` for the trailing `]` to plausibly close a
+		// link label. Without this, garbage inputs like `]\n(#)`
+		// (no opener anywhere) get merged on pass 1, then the
+		// already-merged `](#)` matches the regex again on pass 2,
+		// breaking idempotence.
+		if !hasPrecedingOpenBracket(endMatch[1]) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
 		// Look at the next non-blank line.
 		j := i + 1
 		for j < len(lines) && lines[j].Kind == LineBlank {
@@ -79,6 +93,24 @@ func applySplitLink(lines []Line, _ Options) ([]Line, bool) {
 		i = j + 1
 	}
 	return out, fired
+}
+
+// hasPrecedingOpenBracket reports whether s — which must end in `]`
+// — contains an unescaped `[` before the closing bracket. Used by
+// V8's bracket-balance guard to reject garbage shapes like `]` or
+// `foo]` (no link label present) from being merged with a following
+// `(...)`.
+func hasPrecedingOpenBracket(s string) bool {
+	if !strings.HasSuffix(s, "]") {
+		return false
+	}
+	// Scan everything before the closing `]`.
+	for i := 0; i < len(s)-1; i++ {
+		if s[i] == '[' {
+			return true
+		}
+	}
+	return false
 }
 
 // looksURLish reports whether s contains at least one URL-indicating
