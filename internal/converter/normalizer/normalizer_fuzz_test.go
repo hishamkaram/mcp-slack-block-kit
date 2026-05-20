@@ -29,6 +29,14 @@ func FuzzNormalize(f *testing.F) {
 		"```go fmt.Println(\"hi\")```",       // V4
 		"**bold*",                            // V6
 		"<!channel>",                         // broadcast — must never be introduced
+		// Regression seeds for bugs found in ultrareview:
+		"```go fmt.Println(\"hi\")```\n**unclosed bold", // bug_010 (V4 + V1 idempotence)
+		"* a\n**Important note**\n* b",                  // merged_bug_005 (C3 vs emphasis)
+		"1.5 GB free\n2.3 GB used",                      // merged_bug_005 (C4 vs decimals)
+		"```python\nprint('hi')   \n```",                // merged_bug_001 (C5 inside fence)
+		"foo   \nbar",                                   // merged_bug_001 (3-space hard break)
+		"Use `<br>` for HTML breaks",                    // merged_bug_014 (R8/V2 in code span)
+		"`array[1](https://x.com/v2—doc)`",              // merged_bug_014 (V7 in code span)
 	}
 	for _, s := range seeds {
 		f.Add(s)

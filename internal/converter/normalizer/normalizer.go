@@ -58,6 +58,14 @@ func Normalize(src string, opts Options) (string, []string) {
 	//   - Paragraph-level balance for unclosed constructs runs LAST,
 	//     so earlier edits don't perturb closing counts.
 	//
+	// V11 entity decode runs first when enabled: subsequent
+	// repairs see decoded characters rather than `&amp;` / `&lt;`
+	// escapes. The decoded chars re-escape later in the converter's
+	// sanitizeBroadcasts pass — see internal/converter/mentions.go.
+	if l, ok := applyHTMLEntities(lines, opts); ok { // V11
+		lines = l
+		fired.add("V11")
+	}
 	// Structural rewrites that change line count run first.
 	// br_tag can split a single prose line into multiple lines, so it
 	// runs before any line-pair-merging repair.

@@ -77,6 +77,29 @@ func TestApplyURLUnicode_FalsePositiveGuard(t *testing.T) {
 	}
 }
 
+// TestApplyURLUnicode_InsideInlineCodeUnchanged pins the
+// merged_bug_014 regression: URL-Unicode substitutions inside a
+// backtick code span (CommonMark §6.1 literal content) must NOT
+// fire even when the substring matches the [text](url) shape.
+func TestApplyURLUnicode_InsideInlineCodeUnchanged(t *testing.T) {
+	cases := []string{
+		"`array[1](https://x.com/v2–doc)`",
+		"docs: `[link](https://x.com/path—foo)` is literal",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			lines := classify(in)
+			out, fired := applyURLUnicode(lines, Options{})
+			if fired {
+				t.Errorf("fired inside inline code: %q -> %q", in, reassemble(out))
+			}
+			if reassemble(out) != in {
+				t.Errorf("mutated inline-code content: %q -> %q", in, reassemble(out))
+			}
+		})
+	}
+}
+
 func TestApplyURLUnicode_InsideFenceUnchanged(t *testing.T) {
 	in := "```\n[a](https://x.com/v2–migration)\n```"
 	lines := classify(in)

@@ -132,7 +132,7 @@ func (r *Renderer) ConvertWithWarnings(input string) ([]slack.Block, []string, e
 	var normWarnings []string
 	if normalized, fired := normalizer.Normalize(input, normalizer.Options{
 		DecodeHTMLEntities:       r.opts.DecodeHTMLEntities,
-		RepairMismatchedEmphasis: false,
+		RepairMismatchedEmphasis: r.opts.RepairMismatchedEmphasis,
 	}); len(fired) > 0 {
 		input = normalized
 		normWarnings = append(normWarnings,

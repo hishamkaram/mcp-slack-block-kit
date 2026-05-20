@@ -124,6 +124,23 @@ func classify(src string) []Line {
 
 		// Fence opener check (only outside a fence).
 		if m := fenceOpen.FindStringSubmatch(line); m != nil {
+			// Spec-alignment guard (CommonMark §4.5): a fenced code
+			// block's info string cannot contain the fence character
+			// itself. If the opener's "info string" already contains
+			// a matching closing run, treat the whole line as prose
+			// — it's a malformed one-liner like
+			// ```` ```go fmt.Println("hi")``` ```` that V4 will
+			// rewrite into the canonical three-line form. Without
+			// this guard, classify() tags the next line as
+			// LineFenceContent because inFence is set to true, and
+			// V1/V2/V6 then skip a paragraph that genuinely needs
+			// repair — breaking idempotence between the first and
+			// second Normalize pass.
+			if hasMatchingCloser(m[3], m[2][0], len(m[2])) {
+				out[i].Kind = LineProse
+				prevBlank = false
+				continue
+			}
 			out[i].Kind = LineFenceOpen
 			inFence = true
 			fenceChar = m[2][0]
@@ -182,6 +199,89 @@ func classify(src string) []Line {
 	}
 
 	return out
+}
+
+// inlineCodeMask returns a bitmap of byte positions in s that fall
+// INSIDE a CommonMark §6.1 inline code span. Used by prose-level
+// repairs (R8, V7, future byte-level repairs) to skip rewrites that
+// would corrupt code-span content.
+//
+// Pairing rule: walk left-to-right, find each backtick run, look for
+// the next matching-length run; bytes between them (exclusive) are
+// content of the span. Unmatched runs contribute no masked bytes.
+// Identical to the V2 pair-matching algorithm so the two repairs
+// agree on what "inside a code span" means.
+func inlineCodeMask(s string) []bool {
+	mask := make([]bool, len(s))
+	var (
+		runStarts []int
+		runLens   []int
+	)
+	i := 0
+	for i < len(s) {
+		if s[i] != '`' {
+			i++
+			continue
+		}
+		start := i
+		for i < len(s) && s[i] == '`' {
+			i++
+		}
+		runStarts = append(runStarts, start)
+		runLens = append(runLens, i-start)
+	}
+	if len(runStarts) < 2 {
+		return mask
+	}
+	matched := make([]bool, len(runStarts))
+	k := 0
+	for k < len(runStarts) {
+		if matched[k] {
+			k++
+			continue
+		}
+		paired := false
+		for j := k + 1; j < len(runStarts); j++ {
+			if matched[j] {
+				continue
+			}
+			if runLens[j] == runLens[k] {
+				matched[k] = true
+				matched[j] = true
+				// Mask everything between the close of the
+				// opener and the start of the closer.
+				for p := runStarts[k] + runLens[k]; p < runStarts[j]; p++ {
+					mask[p] = true
+				}
+				k = j + 1
+				paired = true
+				break
+			}
+		}
+		if !paired {
+			k++
+		}
+	}
+	return mask
+}
+
+// hasMatchingCloser reports whether s contains a run of `char` of
+// length >= minLen. Used by the fence-opener classifier to detect
+// one-liner fence shapes like ` ```go body``` ` where the info
+// string captures a closing run.
+func hasMatchingCloser(s string, char byte, minLen int) bool {
+	run := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == char {
+			run++
+			if run >= minLen {
+				return true
+			}
+			continue
+		}
+		run = 0
+	}
+	return false
 }
 
 // hasIndentedCodePrefix reports whether the line begins with at least

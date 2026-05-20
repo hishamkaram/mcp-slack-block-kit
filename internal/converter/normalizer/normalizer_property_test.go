@@ -70,6 +70,27 @@ func TestProperty_NoBroadcastSmuggling(t *testing.T) {
 	}
 }
 
+// TestProperty_V11_EntityDecodeIsLive guards against the property
+// above passing vacuously. V11 is opt-in, and the smuggling
+// property would happily report green if V11 never ran. This sentinel
+// case forces a known &amp; through Normalize and asserts the decoder
+// actually fired.
+func TestProperty_V11_EntityDecodeIsLive(t *testing.T) {
+	out, fired := Normalize("Tom &amp; Jerry", Options{DecodeHTMLEntities: true})
+	if out != "Tom & Jerry" {
+		t.Errorf("V11 didn't decode: got %q, want %q", out, "Tom & Jerry")
+	}
+	hasV11 := false
+	for _, c := range fired {
+		if c == "V11" {
+			hasV11 = true
+		}
+	}
+	if !hasV11 {
+		t.Errorf("V11 didn't surface in fired codes: %v", fired)
+	}
+}
+
 // Property_PreservesWellFormedCodeBlocks: any fenced code block in a
 // well-formed input survives normalization byte-for-byte. The fence
 // walker classifies these lines as LineFenceContent; every prose

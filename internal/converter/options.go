@@ -145,6 +145,14 @@ type Options struct {
 	// sanitizeBroadcasts, which is the safe outcome but worth being
 	// explicit about for any caller auditing broadcast-token paths.
 	DecodeHTMLEntities bool
+
+	// RepairMismatchedEmphasis enables the normalizer's V6 asterisk
+	// balancer (`**italic*` → `*italic*`, `*bold**` → `*bold*`).
+	// Default false because V6 is the catalog's trickiest pattern
+	// and false positives can corrupt prose with deliberate
+	// asymmetric asterisks. Set true when input is known to come
+	// from LLMs that frequently emit mismatched markers.
+	RepairMismatchedEmphasis bool
 }
 
 // DefaultOptions returns Options with the recommended defaults applied.
@@ -163,6 +171,7 @@ func DefaultOptions() Options {
 		MaxNestingDepth:            DefaultMaxNestingDepth,
 		PreferRichText:             false,
 		DecodeHTMLEntities:         false,
+		RepairMismatchedEmphasis:   false,
 	}
 }
 

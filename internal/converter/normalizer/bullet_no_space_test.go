@@ -59,6 +59,11 @@ func TestApplyBulletNoSpace_FalsePositiveGuard(t *testing.T) {
 		{name: "single line no peer", in: "-loner"},
 		{name: "already well-formed", in: "- a\n- b"},
 		{name: "code line with dash", in: "    -code dash"},
+		// Pinned by review: bold/italic between bullets is emphasis,
+		// not a bullet missing a space.
+		{name: "bold paragraph between bullets", in: "* point one\n**Important note**\n* point two"},
+		{name: "italic paragraph between bullets", in: "* a\n*emphasized*\n* b"},
+		{name: "plus emphasis between plus bullets", in: "+ a\n++strong++\n+ b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

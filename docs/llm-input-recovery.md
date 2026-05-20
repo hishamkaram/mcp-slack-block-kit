@@ -11,21 +11,31 @@ version bump.
 The normalizer is **on by default**. Two opt-in flags expand the
 pattern set:
 
-- `Options.DecodeHTMLEntities` — enables a whitelisted HTML-entity
-  decoder. Off by default because the decoded characters re-escape
-  through broadcast sanitization; safe to enable.
-- `Options.RepairMismatchedEmphasis` — enables V6's asterisk
-  balancer. Off by default because V6 is the catalog's trickiest
-  pattern and false positives corrupt prose.
+- `Options.DecodeHTMLEntities` (MCP: `decode_html_entities`; CLI:
+  `--decode-html-entities`) — enables the whitelisted HTML-entity
+  decoder (V11). Off by default because the decoded characters
+  re-escape through broadcast sanitization; safe to enable.
+- `Options.RepairMismatchedEmphasis` (MCP:
+  `repair_mismatched_emphasis`; CLI: `--repair-mismatched-emphasis`)
+  — enables V6's asterisk balancer. Off by default because V6 is
+  the catalog's trickiest pattern and false positives corrupt
+  prose with deliberate asymmetric asterisks.
 
 All repairs:
 - Are **idempotent**: `Normalize(Normalize(s)) == Normalize(s)`,
   pinned by property test + fuzz.
 - Skip content inside fenced code blocks (` ``` ` / `~~~`) and
-  indented code blocks.
+  indented code blocks (CommonMark §4.4 / §4.5 literal content).
+- Skip content inside inline code spans (CommonMark §6.1 literal
+  content). Byte-level prose repairs (R8 `<br>`, V7 URL Unicode,
+  V11 entity decode) honor an inline-code mask derived from the
+  same backtick pair-matching algorithm V2 uses.
 - Are **broadcast-safe**: no repair introduces literal
   `<!channel>` / `<!here>` / `<!everyone>` that wasn't in the
-  input.
+  input. The V11 decoder is whitelisted to the five XML entities
+  + numeric refs; even when it decodes a smuggled
+  `&lt;!channel&gt;` → `<!channel>`, the converter's downstream
+  `sanitizeBroadcasts` pass re-escapes it before it reaches Slack.
 - Are **O(n)** on input length.
 
 ## Repair codes

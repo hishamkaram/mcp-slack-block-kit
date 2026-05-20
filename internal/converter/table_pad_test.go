@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/slack-go/slack"
@@ -41,5 +43,27 @@ func TestTableShortRowsPadded(t *testing.T) {
 		if len(row) != 3 {
 			t.Errorf("row %d has %d cells, want 3", i, len(row))
 		}
+	}
+}
+
+// TestEmptyTableCell_WireShapeNeverNull pins the JSON shape of the
+// emptyTableCell helper directly. slack-go's RichTextSection has no
+// omitempty on Elements, so a nil-Elements section would serialize
+// as `"elements":null` and Slack would reject the payload. Mirroring
+// renderRowCells' single zero-length text element keeps the shape an
+// empty-string-bearing array.
+func TestEmptyTableCell_WireShapeNeverNull(t *testing.T) {
+	cell := emptyTableCell()
+	raw, err := json.Marshal(cell)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "\"elements\":null") {
+		t.Errorf("rich_text_section.elements is null in output: %s", body)
+	}
+	// Positive check: structural array with the placeholder text element.
+	if !strings.Contains(body, "\"type\":\"text\"") {
+		t.Errorf("expected zero-length text placeholder in output: %s", body)
 	}
 }

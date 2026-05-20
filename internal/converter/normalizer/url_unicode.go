@@ -53,22 +53,47 @@ func applyURLUnicode(lines []Line, _ Options) ([]Line, bool) {
 			continue
 		}
 		original := lines[i].Text
-		rewritten := urlInBrackets.ReplaceAllStringFunc(original,
-			func(match string) string {
-				m := urlInBrackets.FindStringSubmatch(match)
-				return m[1] + replaceUnicode(m[2]) + m[3]
-			})
-		rewritten = urlInAutolink.ReplaceAllStringFunc(rewritten,
-			func(match string) string {
-				m := urlInAutolink.FindStringSubmatch(match)
-				return m[1] + replaceUnicode(m[2]) + m[3]
-			})
+		mask := inlineCodeMask(original)
+		rewritten := rewriteOutsideMask(original, urlInBrackets, mask)
+		rewritten = rewriteOutsideMask(rewritten, urlInAutolink, inlineCodeMask(rewritten))
 		if rewritten != original {
 			lines[i].Text = rewritten
 			fired = true
 		}
 	}
 	return lines, fired
+}
+
+// rewriteOutsideMask runs re against s and applies the URL-Unicode
+// rewrite to every match whose start position is NOT inside a
+// CommonMark inline code span (per the inline-code mask). Matches
+// inside code spans are left untouched — CommonMark §6.1 specifies
+// code-span content as literal, so even an ASCII-equivalent
+// substitution is a content change there.
+func rewriteOutsideMask(s string, re *regexp.Regexp, mask []bool) string {
+	matches := re.FindAllStringSubmatchIndex(s, -1)
+	if len(matches) == 0 {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	cursor := 0
+	for _, m := range matches {
+		fullStart, fullEnd := m[0], m[1]
+		if fullStart < len(mask) && mask[fullStart] {
+			continue
+		}
+		// Submatches: m[2:4] = group 1, m[4:6] = group 2, m[6:8] = group 3.
+		g1 := s[m[2]:m[3]]
+		g2 := s[m[4]:m[5]]
+		g3 := s[m[6]:m[7]]
+		out = append(out, s[cursor:fullStart]...)
+		out = append(out, g1...)
+		out = append(out, replaceUnicode(g2)...)
+		out = append(out, g3...)
+		cursor = fullEnd
+	}
+	out = append(out, s[cursor:]...)
+	return string(out)
 }
 
 // replaceUnicode walks s and replaces every rune that has an entry in

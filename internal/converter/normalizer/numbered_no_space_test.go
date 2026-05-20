@@ -57,6 +57,11 @@ func TestApplyNumberedNoSpace_FalsePositiveGuard(t *testing.T) {
 		{name: "version with no peer", in: "1.5GB of RAM"},
 		{name: "already well-formed", in: "1. a\n2. b"},
 		{name: "single line no peer", in: "1.lonely"},
+		// Pinned by review: two adjacent decimal-prefixed lines must
+		// NOT mutually validate each other as a numbered list.
+		{name: "two adjacent memory sizes", in: "1.5 GB free\n2.3 GB used"},
+		{name: "version pair", in: "1.0.0 release\n2.5.1 release"},
+		{name: "decimals in numeric context", in: "3.14 pi\n2.71 e"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -105,8 +105,20 @@ func (w *walker) handleTable(t *extast.Table) error {
 // whose column count was under the header's. Slack rejects mismatched
 // column counts; an empty cell preserves the structure without
 // inserting any visible content.
+//
+// We mirror the empty-cell fallback in renderRowCells (a single
+// zero-length text element) rather than calling NewRichTextSection()
+// with zero arguments. The latter leaves Elements as a nil slice,
+// which slack-go's RichTextSection serializes as `"elements":null`
+// (the field has no omitempty tag); Slack's Block Kit schema
+// requires an array there, so a null would be rejected at
+// chat.postMessage time. Pinned by TestTableShortRowsPadded which
+// now also marshals + greps the JSON shape.
 func emptyTableCell() *slack.RichTextBlock {
-	return slack.NewRichTextBlock("", slack.NewRichTextSection())
+	return slack.NewRichTextBlock(
+		"",
+		slack.NewRichTextSection(slack.NewRichTextSectionTextElement("", nil)),
+	)
 }
 
 // collectTableRows walks a Table node and returns its header cells and data

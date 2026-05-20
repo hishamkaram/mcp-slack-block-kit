@@ -30,6 +30,20 @@ func applyBulletNoSpace(lines []Line, _ Options) ([]Line, bool) {
 		if m == nil {
 			continue
 		}
+		// Emphasis-not-bullet guard: when the marker character
+		// appears more than once on this line, the line is almost
+		// certainly emphasis with a balanced closer (`*italic*`,
+		// `**bold**`, `++strong++`) rather than a malformed list
+		// item. Rewriting it would corrupt the emphasis span AND
+		// cascade into V1 appending a stray closer of its own.
+		// `-` is exempted because hyphens are common in prose
+		// (`free-range`, `double-tap`) and the digit/whitespace
+		// regex guards already keep `-` safe for genuine lists.
+		// Pinned by the new "emphasis paragraph between bullets"
+		// cases in TestApplyBulletNoSpace_FalsePositiveGuard.
+		if m[2][0] != '-' && byteCount(lines[i].Text, m[2][0]) > 1 {
+			continue
+		}
 		if !hasAdjacentBulletPeer(lines, i, m[1], m[2][0]) {
 			continue
 		}
@@ -37,6 +51,17 @@ func applyBulletNoSpace(lines []Line, _ Options) ([]Line, bool) {
 		fired = true
 	}
 	return lines, fired
+}
+
+// byteCount returns the number of occurrences of b in s.
+func byteCount(s string, b byte) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			n++
+		}
+	}
+	return n
 }
 
 // hasAdjacentBulletPeer checks whether the line at index i has a

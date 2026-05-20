@@ -3,12 +3,19 @@ package normalizer
 import "regexp"
 
 // numberedNoSpace matches a line that starts with an ordered-list
-// marker (1–9 digits + `.` or `)`) immediately followed by a non-space
-// character. CommonMark §5.2 caps the number at 9 digits per the spec.
+// marker (1–9 digits + `.` or `)`) immediately followed by a non-space,
+// non-digit character. CommonMark §5.2 caps the number at 9 digits per
+// the spec.
+//
+// The non-digit constraint on the first content character is critical:
+// without it, the regex matches `0.0` (a decimal) as marker=`.` and
+// content=`0`, and the C4 repair then mutates `0.A\n0.0` into
+// `0. A\n0. 0` — a false positive. Mirrors the digit-class guard on
+// applyBulletNoSpace's regex.
 //
 // Captures: (1) leading indent, (2) the digit run, (3) the marker char
 // (`.` or `)`), (4) the first content character.
-var numberedNoSpace = regexp.MustCompile(`^( {0,3})(\d{1,9})([.)])([^\s])`)
+var numberedNoSpace = regexp.MustCompile(`^( {0,3})(\d{1,9})([.)])([^\s\d])`)
 
 // applyNumberedNoSpace inserts a space after an ordered-list marker
 // when missing. Fires only when the line is prose context AND an
@@ -64,14 +71,21 @@ func hasAdjacentNumberedPeer(lines []Line, i int, indent string, marker byte) bo
 			return false
 		}
 		k++
-		// Either followed by space (well-formed peer) or non-space
-		// content (peer also needs repair).
+		// Either followed by space (well-formed peer) or non-digit
+		// content (peer also needs repair). Digits are explicitly
+		// excluded — two adjacent decimal-prefixed lines like
+		// "1.5 GB free\n2.3 GB used" must NOT mutually validate each
+		// other as a numbered list, or C4 turns valid prose into
+		// "1. 5 GB free\n2. 3 GB used". Mirrors the digit-class
+		// guard in applyBulletNoSpace's regex.
 		if k < len(text) {
 			next := text[k]
 			if next == ' ' || next == '\t' {
 				return true
 			}
-			return true // peer also malformed
+			if next < '0' || next > '9' {
+				return true
+			}
 		}
 		return false
 	}

@@ -1,6 +1,9 @@
 package normalizer
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyBRTag_TableCases(t *testing.T) {
 	cases := []struct {
@@ -62,6 +65,42 @@ func TestApplyBRTag_NoBRUnchanged(t *testing.T) {
 	}
 	if reassemble(out) != in {
 		t.Error("mutated input")
+	}
+}
+
+// TestApplyBRTag_InsideInlineCodeUnchanged pins the merged_bug_014
+// regression: a `<br>` inside a backtick code span (CommonMark §6.1
+// literal content) must NOT be split out.
+func TestApplyBRTag_InsideInlineCodeUnchanged(t *testing.T) {
+	cases := []string{
+		"Use `<br>` for HTML breaks",
+		"docs: `Foo<br>Bar` is literal",
+		"mixed `<br>` and out-of-code <br> repaired only out",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			lines := classify(in)
+			out, fired := applyBRTag(lines, Options{})
+			// `Use \`<br>\` for HTML breaks` — the <br> inside
+			// backticks must survive. The first two cases have no
+			// out-of-code <br>, so no fire at all.
+			if strings.Contains(in, "out-of-code") {
+				if !fired {
+					t.Error("expected fire on out-of-code <br>")
+				}
+				if !strings.Contains(reassemble(out), "`<br>`") {
+					t.Errorf("inline-code <br> was modified: %q", reassemble(out))
+				}
+			} else {
+				if fired {
+					t.Errorf("fired on input with <br> only inside code: %q -> %q",
+						in, reassemble(out))
+				}
+				if reassemble(out) != in {
+					t.Errorf("mutated input: %q -> %q", in, reassemble(out))
+				}
+			}
+		})
 	}
 }
 

@@ -27,15 +27,16 @@ import (
 //	cat doc.md | mcp-slack-block-kit convert --preview > payload.json
 func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.Command {
 	var (
-		mode                  string
-		previewFlag           bool
-		allowBroadcasts       bool
-		preserveMentionTokens bool
-		preferRichText        bool
-		decodeHTMLEntities    bool
-		blockIDPrefix         string
-		maxInputBytes         int
-		pretty                bool
+		mode                     string
+		previewFlag              bool
+		allowBroadcasts          bool
+		preserveMentionTokens    bool
+		preferRichText           bool
+		decodeHTMLEntities       bool
+		repairMismatchedEmphasis bool
+		blockIDPrefix            string
+		maxInputBytes            int
+		pretty                   bool
 	)
 
 	cmd := &cobra.Command{
@@ -60,6 +61,7 @@ func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.C
 			opts.PreserveMentionTokens = preserveMentionTokens
 			opts.PreferRichText = preferRichText
 			opts.DecodeHTMLEntities = decodeHTMLEntities
+			opts.RepairMismatchedEmphasis = repairMismatchedEmphasis
 			if blockIDPrefix != "" {
 				opts.BlockIDPrefix = blockIDPrefix
 			}
@@ -137,6 +139,8 @@ func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.C
 		"bias auto mode toward rich_text decomposition over the single markdown block; rich_text renders identically on every Slack surface (push, search, screen readers, email digest)")
 	cmd.Flags().BoolVar(&decodeHTMLEntities, "decode-html-entities", false,
 		"decode whitelisted HTML entities (&amp; &lt; &gt; &quot; &apos; + numeric refs) before parsing")
+	cmd.Flags().BoolVar(&repairMismatchedEmphasis, "repair-mismatched-emphasis", false,
+		"enable the V6 asterisk balancer (**italic* → *italic*); default off due to false-positive risk on deliberate asymmetric asterisks")
 	cmd.Flags().StringVar(&blockIDPrefix, "block-id-prefix", "",
 		"optional prefix for generated block_id values")
 	cmd.Flags().IntVar(&maxInputBytes, "max-input-bytes", 0,

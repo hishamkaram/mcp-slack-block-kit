@@ -88,6 +88,41 @@ func TestNormalize_ScreenshotInput_RepairsAllExpectedPatterns(t *testing.T) {
 	}
 }
 
+// TestNormalize_V4ThenV1_IsIdempotent pins the bug_010 regression:
+// a one-line fence followed by an unclosed emphasis paragraph used
+// to violate idempotence because classify() tagged the post-split
+// tail as LineFenceContent, so V1 skipped it on pass 1 and the
+// second Normalize call diverged.
+func TestNormalize_V4ThenV1_IsIdempotent(t *testing.T) {
+	in := "```go fmt.Println(\"hi\")```\n**unclosed bold"
+	out1, fired1 := Normalize(in, Options{})
+	out2, fired2 := Normalize(out1, Options{})
+	if out1 != out2 {
+		t.Errorf("not idempotent:\n once: %q (fired %v)\ntwice: %q (fired %v)",
+			out1, fired1, out2, fired2)
+	}
+	if len(fired2) != 0 {
+		t.Errorf("second pass fired %v, want none", fired2)
+	}
+	// Sanity: both V4 (split) and V1 (close) must have fired in the
+	// first pass, not deferred.
+	hasV1, hasV4 := false, false
+	for _, c := range fired1 {
+		if c == "V1" {
+			hasV1 = true
+		}
+		if c == "V4" {
+			hasV4 = true
+		}
+	}
+	if !hasV4 {
+		t.Errorf("expected V4 in fired codes, got %v", fired1)
+	}
+	if !hasV1 {
+		t.Errorf("expected V1 in fired codes (post-V4 tail should be reachable), got %v", fired1)
+	}
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

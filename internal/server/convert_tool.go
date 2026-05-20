@@ -16,16 +16,17 @@ import (
 // Field tags are read by the SDK's jsonschema generator at registration
 // time.
 type ConvertInput struct {
-	Markdown              string            `json:"markdown" jsonschema:"the markdown text to convert to Slack Block Kit JSON"`
-	Mode                  string            `json:"mode,omitempty" jsonschema:"conversion strategy: auto (default), rich_text, markdown_block, or section_mrkdwn"`
-	AllowBroadcasts       bool              `json:"allow_broadcasts,omitempty" jsonschema:"if true, raw <!channel>/<!here>/<@U…> in input pass through unchanged (default false: entity-escaped for safety)"`
-	PreserveMentionTokens bool              `json:"preserve_mention_tokens,omitempty" jsonschema:"if true, already-typed Slack tokens (<@U…>, <#C…>, <!subteam^S…>, <!date^…|fb>) pass through as typed elements while catastrophic broadcasts (<!channel>/<!here>/<!everyone>) still escape; useful when the markdown comes from an upstream Slack tool result"`
-	PreferRichText        bool              `json:"prefer_rich_text,omitempty" jsonschema:"if true, auto mode prefers rich_text decomposition over the single Slack markdown block; rich_text renders identically on push notifications, search, screen readers, and the email digest where the markdown block's fallback rendering may show literal characters"`
-	DecodeHTMLEntities    bool              `json:"decode_html_entities,omitempty" jsonschema:"if true, the LLM-input normalizer decodes whitelisted HTML entities (&amp; &lt; &gt; &quot; &apos; + numeric refs) before parsing; default false; safe to enable because the resulting chars re-escape through broadcast sanitization"`
-	MentionMap            map[string]string `json:"mention_map,omitempty" jsonschema:"map of bare @handle to Slack ID (U… user, C… channel, S… usergroup); resolved to typed mention elements"`
-	ReturnPreviewURL      *bool             `json:"return_preview_url,omitempty" jsonschema:"include the Block Kit Builder preview URL in the response; defaults to true when omitted, set false to skip it"`
-	Split                 string            `json:"split,omitempty" jsonschema:"split strategy: none (default), blocks, or both — chunks the result on the >50-block axis (blocks and both are equivalent)"`
-	BlockIDPrefix         string            `json:"block_id_prefix,omitempty" jsonschema:"optional prefix for generated block_id values; empty means no block_id is set"`
+	Markdown                 string            `json:"markdown" jsonschema:"the markdown text to convert to Slack Block Kit JSON"`
+	Mode                     string            `json:"mode,omitempty" jsonschema:"conversion strategy: auto (default), rich_text, markdown_block, or section_mrkdwn"`
+	AllowBroadcasts          bool              `json:"allow_broadcasts,omitempty" jsonschema:"if true, raw <!channel>/<!here>/<@U…> in input pass through unchanged (default false: entity-escaped for safety)"`
+	PreserveMentionTokens    bool              `json:"preserve_mention_tokens,omitempty" jsonschema:"if true, already-typed Slack tokens (<@U…>, <#C…>, <!subteam^S…>, <!date^…|fb>) pass through as typed elements while catastrophic broadcasts (<!channel>/<!here>/<!everyone>) still escape; useful when the markdown comes from an upstream Slack tool result"`
+	PreferRichText           bool              `json:"prefer_rich_text,omitempty" jsonschema:"if true, auto mode prefers rich_text decomposition over the single Slack markdown block; rich_text renders identically on push notifications, search, screen readers, and the email digest where the markdown block's fallback rendering may show literal characters"`
+	DecodeHTMLEntities       bool              `json:"decode_html_entities,omitempty" jsonschema:"if true, the LLM-input normalizer decodes whitelisted HTML entities (&amp; &lt; &gt; &quot; &apos; + numeric refs) before parsing; default false; safe to enable because the resulting chars re-escape through broadcast sanitization"`
+	RepairMismatchedEmphasis bool              `json:"repair_mismatched_emphasis,omitempty" jsonschema:"if true, the LLM-input normalizer's V6 asterisk balancer collapses mismatched pairs like **italic* to the smaller count; default false; opt-in because V6 is the catalog's trickiest pattern and false positives can corrupt prose with deliberate asymmetric asterisks"`
+	MentionMap               map[string]string `json:"mention_map,omitempty" jsonschema:"map of bare @handle to Slack ID (U… user, C… channel, S… usergroup); resolved to typed mention elements"`
+	ReturnPreviewURL         *bool             `json:"return_preview_url,omitempty" jsonschema:"include the Block Kit Builder preview URL in the response; defaults to true when omitted, set false to skip it"`
+	Split                    string            `json:"split,omitempty" jsonschema:"split strategy: none (default), blocks, or both — chunks the result on the >50-block axis (blocks and both are equivalent)"`
+	BlockIDPrefix            string            `json:"block_id_prefix,omitempty" jsonschema:"optional prefix for generated block_id values; empty means no block_id is set"`
 }
 
 // ConvertOutput is the schema for the convert_markdown_to_block_kit response.
@@ -151,6 +152,7 @@ func convertInputToOptions(in ConvertInput) (converter.Options, error) {
 	opts.PreserveMentionTokens = in.PreserveMentionTokens
 	opts.PreferRichText = in.PreferRichText
 	opts.DecodeHTMLEntities = in.DecodeHTMLEntities
+	opts.RepairMismatchedEmphasis = in.RepairMismatchedEmphasis
 	if len(in.MentionMap) > 0 {
 		opts.MentionMap = in.MentionMap
 	}
