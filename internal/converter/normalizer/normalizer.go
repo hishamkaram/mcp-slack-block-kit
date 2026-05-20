@@ -106,6 +106,32 @@ func Normalize(src string, opts Options) (string, []string) {
 		lines = l
 		fired.add("C6")
 	}
+	// Paragraph-level balance for unclosed constructs. MUST run last
+	// because earlier line-pattern repairs (V8 merge, R8 split, C5
+	// strip) change line boundaries and content lengths that the
+	// balance counters consume. V4 runs before V3 because V4 may
+	// produce a properly-fenced block out of a one-line lump, which
+	// V3 would otherwise misclassify as an unclosed fence.
+	if l, ok := applyFenceLangNoNewline(lines, opts); ok { // V4
+		lines = l
+		fired.add("V4")
+	}
+	if l, ok := applyUnclosedFence(lines, opts); ok { // V3
+		lines = l
+		fired.add("V3")
+	}
+	// V1 runs BEFORE V2 in pipeline order: an emphasis appender that
+	// turns a line ending in `` ` `` into one ending in `*` would
+	// otherwise re-arm V2 on the next pass, breaking idempotence.
+	// (Pinned by FuzzNormalize against inputs like `*0000000` `.)
+	if l, ok := applyUnclosedEmphasis(lines, opts); ok { // V1
+		lines = l
+		fired.add("V1")
+	}
+	if l, ok := applyUnclosedInlineCode(lines, opts); ok { // V2
+		lines = l
+		fired.add("V2")
+	}
 	//
 	// Future pipeline stages (placeholder list; concrete repairs land
 	// in subsequent commits):
