@@ -75,6 +75,15 @@ func (r *Renderer) shouldUseMarkdownBlock(input string, root ast.Node) bool {
 	if len(input) > MaxMarkdownBlockSum {
 		return false
 	}
+	// Opt-in bias toward rich_text decomposition. When set, auto-mode
+	// always falls through to the deterministic walker so the output
+	// renders identically on every Slack surface — including push
+	// notifications, search, screen readers, and the email digest,
+	// where the `markdown` block's fallback rendering can show literal
+	// `##` / `**` / `[label](url)` characters.
+	if r.opts.PreferRichText {
+		return false
+	}
 	hasImage := false
 	hasLargeTable := false
 	walk(root, func(n ast.Node) (stop bool) {

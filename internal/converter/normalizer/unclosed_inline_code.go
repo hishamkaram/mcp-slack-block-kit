@@ -36,6 +36,15 @@ func applyUnclosedInlineCode(lines []Line, _ Options) ([]Line, bool) {
 		if len(runs) == 0 {
 			continue
 		}
+		// Idempotence guard #3: any run of length ≥ 3 belongs to a
+		// fenced-code-block boundary (opener or closer), not an
+		// inline code span. The fence walker can't always classify
+		// these correctly because the line may be inside a blockquote
+		// (`> \`\`\`go`), so we skip the line outright when we see a
+		// 3+ run.
+		if hasFenceLikeRun(runs) {
+			continue
+		}
 		unmatched, firstPos := unmatchedRunsWithFirstPos(runs, positions)
 		if len(unmatched) == 0 {
 			continue
@@ -58,6 +67,17 @@ func applyUnclosedInlineCode(lines []Line, _ Options) ([]Line, bool) {
 		fired = true
 	}
 	return lines, fired
+}
+
+// hasFenceLikeRun reports whether runs contains any backtick run of
+// length 3 or more (a fenced code block opener/closer).
+func hasFenceLikeRun(runs []int) bool {
+	for _, n := range runs {
+		if n >= 3 {
+			return true
+		}
+	}
+	return false
 }
 
 // backtickRunsWithPositions returns both run lengths and the start

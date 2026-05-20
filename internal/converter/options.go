@@ -124,6 +124,27 @@ type Options struct {
 	// past this ceiling are rejected with ErrInputTooDeeplyNested. Real
 	// content never approaches 100 levels.
 	MaxNestingDepth int
+
+	// PreferRichText biases ModeAuto toward `rich_text` decomposition
+	// over the single Slack `markdown` block whenever the input is
+	// fully representable in rich_text (no images, no oversized
+	// tables, no non-representable nesting patterns). Default false
+	// in this release; the next major release will flip the default
+	// to true because Slack's rich_text blocks render identically on
+	// push notifications, search results, screen readers, and the
+	// email digest, while the `markdown` block's fallback rendering
+	// on those surfaces can show literal `##`/`**`/`[label](url)`
+	// characters. To pin the current behavior across the flip, set
+	// PreferRichText: false explicitly.
+	PreferRichText bool
+
+	// DecodeHTMLEntities enables the normalizer's whitelisted entity
+	// decoder (&amp; &lt; &gt; &quot; &apos; + numeric refs) on the
+	// raw markdown input. Default false — opt-in because the
+	// resulting `&`/`<`/`>` characters will re-escape through
+	// sanitizeBroadcasts, which is the safe outcome but worth being
+	// explicit about for any caller auditing broadcast-token paths.
+	DecodeHTMLEntities bool
 }
 
 // DefaultOptions returns Options with the recommended defaults applied.
@@ -140,6 +161,8 @@ func DefaultOptions() Options {
 		MentionMap:                 nil,
 		EnableTables:               true,
 		MaxNestingDepth:            DefaultMaxNestingDepth,
+		PreferRichText:             false,
+		DecodeHTMLEntities:         false,
 	}
 }
 

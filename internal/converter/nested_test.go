@@ -280,13 +280,23 @@ func TestNested_TableInList_AutoMode_DecomposesAndWarns(t *testing.T) {
 
 const looseList = "- first paragraph\n\n  second paragraph in same item\n\n- next item\n"
 
+// expectSurfaceWarningOnly returns true when warnings contains
+// exactly one entry equal to MarkdownBlockFallbackSurfacesWarning.
+// Used to distinguish the always-on auto-mode advisory from the
+// pattern-specific warnings the nested tests assert.
+func expectSurfaceWarningOnly(warnings []string) bool {
+	return len(warnings) == 1 && warnings[0] == MarkdownBlockFallbackSurfacesWarning
+}
+
 func TestNested_LooseList_AutoMode_StillUsesMarkdownBlock(t *testing.T) {
 	blocks, warnings := convertWith(t, ModeAuto, looseList)
 	if !hasMarkdownBlock(blocks) || len(blocks) != 1 {
 		t.Errorf("loose list (no code/table) should route to single markdown block; got %v", blockTypes(blocks))
 	}
-	if len(warnings) != 0 {
-		t.Errorf("loose list shouldn't trigger any warnings, got %v", warnings)
+	// Auto-mode markdown-block picks now carry the fallback-surface
+	// advisory; the nested-pattern warning still must be absent.
+	if !expectSurfaceWarningOnly(warnings) {
+		t.Errorf("expected only the fallback-surface advisory, got %v", warnings)
 	}
 }
 

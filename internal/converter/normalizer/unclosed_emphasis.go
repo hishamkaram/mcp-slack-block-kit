@@ -58,37 +58,54 @@ func applyUnclosedEmphasis(lines []Line, _ Options) ([]Line, bool) {
 // behind an opt-in flag). V1 only fires when:
 //
 //  1. The paragraph contains EXACTLY one `**` run AND that run is
-//     followed by at least one word character with no further `*`
-//     of any length later. → append `**`.
+//     left-flanking (line-start or preceded by whitespace) AND has
+//     word content after it. → append `**`.
 //  2. Else, the paragraph contains EXACTLY one standalone `*` run
-//     (not part of any `**` or `***`) AND that run is followed by
-//     at least one word character with no further `*` later. →
-//     append `*`.
+//     under the same left-flanking guard. → append `*`.
+//
+// The left-flanking guard mirrors CommonMark §6.2's rule: a `*` is
+// NOT an emphasis opener when it's flanked by alphanumerics on both
+// sides (e.g. intra-word like `10*x`). Without this guard, headers
+// like `Pricing: 10*x + 5_y` would get a stray closer appended,
+// turning literal text into an italic span.
 //
 // Inputs like `**bold*` (mixed/ambiguous) and `***word**` (multiple
-// runs) deliberately do nothing — repairing them risks producing
-// non-idempotent output. The general balancer is V6's job.
+// runs) deliberately do nothing. The general balancer is V6's job.
 //
 // Underscore emphasis (`_italic_`) is intentionally NOT handled —
 // CommonMark treats intra-word `_` as literal, so `snake_case`
 // patterns would create constant false positives.
 func balanceTrailingEmphasis(text string) string {
 	asterRuns := asteriskRuns(text)
-	// Bold case: exactly one `**` run (length 2), nothing else.
-	if len(asterRuns) == 1 && asterRuns[0].length == 2 {
-		if hasWordContentAfter(text, asterRuns[0].end) {
-			return "**"
-		}
+	if len(asterRuns) != 1 {
 		return ""
 	}
-	// Italic case: exactly one `*` run (length 1), nothing else.
-	if len(asterRuns) == 1 && asterRuns[0].length == 1 {
-		if hasWordContentAfter(text, asterRuns[0].end) {
-			return "*"
-		}
+	run := asterRuns[0]
+	if !isLeftFlanking(text, run.start) {
 		return ""
+	}
+	if !hasWordContentAfter(text, run.end) {
+		return ""
+	}
+	switch run.length {
+	case 1:
+		return "*"
+	case 2:
+		return "**"
 	}
 	return ""
+}
+
+// isLeftFlanking reports whether the character at position pos is
+// left-flanking per CommonMark §6.2 (suitable as an emphasis opener).
+// True when either (a) pos is line start or (b) the previous byte is
+// whitespace or non-word punctuation.
+func isLeftFlanking(s string, pos int) bool {
+	if pos == 0 {
+		return true
+	}
+	prev := s[pos-1]
+	return !isWordByte(prev)
 }
 
 // asteriskRun records a contiguous `*` run.
