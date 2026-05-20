@@ -8,10 +8,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **normalizer**: new `internal/converter/normalizer` package that
+  repairs 13 evidenced LLM-emission patterns before goldmark parses
+  the input. Always-on repairs:
+  - **V1** unclosed emphasis (`*italic`, `**bold`) — appends a
+    matching closer when there is a single left-flanking opener with
+    word content after it.
+  - **V2** unclosed inline code (`` `code ``) — appends a closer of
+    the unmatched run's length, respecting CommonMark code-span
+    nesting (`` ``a `b`` `` is correctly recognized as balanced).
+  - **V3** unclosed fenced code block (`` ``` `` or `~~~`) — appends
+    a closing fence at EOF to prevent the rest of the document from
+    being swallowed.
+  - **V4** fence-with-language-no-newline
+    (``` ```go fmt.Println("hi")``` ```) — splits onto canonical
+    three lines; conservative known-languages whitelist.
+  - **V5** ATX header without space (`#Title` → `# Title`).
+  - **V7** Unicode look-alikes inside URL paths (en-dash, em-dash,
+    curly quotes, ellipsis) → ASCII equivalents; em-dashes in prose
+    untouched.
+  - **V8** link split across lines (`[label]\n(url)` → `[label](url)`).
+  - **C1** stray tilde between word characters escaped (`20~25` →
+    `20\~25`); preserves authored `~~` strikethrough.
+  - **C3** bullet marker without space (`-item` → `- item`).
+  - **C4** numbered marker without space (`1.item` → `1. item`).
+  - **C5/C9** trailing whitespace stripped (CommonMark hard-break
+    marker preserved).
+  - **C6** borderless GFM tables get leading/trailing pipes.
+  - **C7** table data rows shorter than the header padded with empty
+    cells (layer-B repair in `internal/converter/tables.go`).
+  - **R8** `<br>` tags converted to newlines outside table cells and
+    spaces inside table cells.
+
+  Two opt-in repairs:
+  - **V11** whitelisted HTML entity decode (`&amp; &lt; &gt; &quot;
+    &apos;` + numeric refs) gated by `Options.DecodeHTMLEntities`.
+  - **V6** asterisk-pair balancer (`**italic*` → `*italic*`) gated
+    by `Options.RepairMismatchedEmphasis`.
+
+  Every fired repair surfaces in the response's `warnings` field as
+  a single combined string (`normalized input (LLM-mistake repairs
+  fired: V8, C3)`). Codes are semver-stable; the full catalog with
+  evidence and examples lives at `docs/llm-input-recovery.md`.
+
+  Hardening: 95%+ unit-test coverage on the normalizer package,
+  five property tests (idempotence, length bound, no-broadcast-
+  smuggling, code-block preservation), a `FuzzNormalize` target run
+  for 60s+ across multiple commits with zero failures.
+
+- **converter**: `Options.PreferRichText` (default `false`) — opt-in
+  bias toward `rich_text` decomposition over the single Slack
+  `markdown` block. `rich_text` renders identically on push
+  notifications, search results, screen readers, and the email
+  digest, where the `markdown` block's fallback rendering can show
+  literal `##` / `**` / `[label](url)` characters. Surfaced as
+  `prefer_rich_text` on the MCP convert tool and `--prefer-rich-text`
+  on the CLI. Re-exported via `block_kit/`.
+- **converter**: `Options.DecodeHTMLEntities` (default `false`) —
+  see V11 above. Surfaced as `decode_html_entities` /
+  `--decode-html-entities`.
+- **converter**: `MarkdownBlockFallbackSurfacesWarning` constant.
+  Auto-mode emits this advisory whenever it picks a single
+  `markdown` block, naming the fallback surfaces where rendering
+  degrades. Re-exported via `block_kit/`.
+- **converter**: `DeriveTextFallback([]slack.Block) string` returns
+  a 150-char plain-text summary suitable for
+  `chat.postMessage(text=)`. Strips Slack mrkdwn, CommonMark links,
+  ATX hashes, and blockquote prefixes; header blocks dominate.
+  Re-exported via `block_kit/` together with the
+  `TextFallbackMaxChars` constant.
+- **server**: `ConvertOutput.text_fallback` field carries the
+  derived summary in the MCP convert-tool response.
 
 ### Changed
+- **prompts**: the `format_for_slack` MCP prompt body now instructs
+  callers to pass the returned `blocks` as `chat.postMessage(blocks=)`,
+  the returned `text_fallback` as `chat.postMessage(text=)`, to
+  surface `warnings` to the user (especially normalization repair
+  codes and the fallback-surface advisory), and to set
+  `prefer_rich_text=true` for accessibility-sensitive channels.
 
-### Fixed
+### Deprecated
+- The default of `Options.PreferRichText` will flip from `false` to
+  `true` in the next major release. When the picker was first
+  written, the Slack `markdown` block was the only block type that
+  supported headers, tables, task-lists, dividers, and
+  code-with-language — so biasing auto-mode toward it was the right
+  call. Slack's March 6, 2026 expansion of `rich_text` removed that
+  advantage; `rich_text` now renders identically on every surface,
+  the `markdown` block does not. To pin the current behavior across
+  the flip, set `PreferRichText: false` explicitly.
+
+### Docs
+- New `docs/llm-input-recovery.md` catalog with evidence for every
+  normalizer pattern (issue links, blog references, spec citations).
+- `internal/server/cheatsheet.md` (the `block-kit-cheatsheet` MCP
+  resource) gained a "Best-effort posting recipe" section and a
+  "Troubleshooting: literal `##` / `**` / `[label](url)` appear in
+  Slack" section walking through the three diagnostic causes.
+- `README.md` gained an "LLM input repairs" section listing every
+  normalizer code, a footnote on the modes table explaining the
+  `auto`-mode fallback caveat, and a "Troubleshooting" section
+  matching the cheatsheet's diagnostic walk.
 
 ---
 

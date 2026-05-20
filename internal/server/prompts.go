@@ -9,6 +9,36 @@ import (
 
 const formatForSlackPromptName = "format_for_slack"
 
+// formatForSlackInstructions is the prompt body the MCP server returns
+// for the format_for_slack prompt. The text guides the LLM caller
+// through the canonical "best-effort posting" recipe: convert via the
+// tool, post via chat.postMessage with the returned blocks AND the
+// returned text fallback, surface warnings, and bias toward rich_text
+// rendering when accessibility matters.
+const formatForSlackInstructions = "" +
+	"Convert the content below into a Slack Block Kit message by calling " +
+	"convert_markdown_to_block_kit with it as the `markdown` argument.\n\n" +
+	"When you post the result with chat.postMessage:\n" +
+	"  - Pass the returned `blocks` array as the `blocks:` parameter. Do NOT\n" +
+	"    pass it as the `text:` parameter — Slack renders the `text:` field\n" +
+	"    as mrkdwn, so literal `##`, `**`, and `[label](url)` characters\n" +
+	"    would appear.\n" +
+	"  - Pass the returned `text_fallback` as the `text:` parameter. That\n" +
+	"    string is the fallback shown on push notifications, search\n" +
+	"    results, screen readers, and the email digest. Do NOT pass the\n" +
+	"    markdown source as `text:`.\n" +
+	"  - Read response.warnings and surface to the user any repair\n" +
+	"    notifications (`normalized input ...`) plus the fallback-surface\n" +
+	"    advisory when present.\n\n" +
+	"Leave mention sanitization on — do not set allow_broadcasts unless the " +
+	"user explicitly asks to ping a channel. Set prefer_rich_text=true when " +
+	"the message is going to a channel where push notifications or " +
+	"accessibility matter; rich_text renders identically on every Slack " +
+	"surface, the single markdown block does not. (The default of " +
+	"prefer_rich_text will flip to true in the next major release.)\n\n" +
+	"You may call validate_block_kit on the result to confirm it is within " +
+	"Slack's limits.\n\n--- content ---\n"
+
 // registerPrompts exposes reusable MCP prompt templates that guide a model
 // through the common workflow of turning text into a safe Slack message.
 func (s *Server) registerPrompts() {
@@ -36,11 +66,7 @@ func handleFormatForSlackPrompt(_ context.Context, req *mcp.GetPromptRequest) (*
 	if text == "" {
 		return nil, fmt.Errorf("prompt %q requires a non-empty 'text' argument", formatForSlackPromptName)
 	}
-	instructions := "Convert the content below into a Slack Block Kit message by calling the " +
-		"convert_markdown_to_block_kit tool with it as the `markdown` argument. Leave mention " +
-		"sanitization on — do NOT set allow_broadcasts unless the user explicitly asks to ping a " +
-		"channel. After converting, you may call validate_block_kit on the result to confirm it " +
-		"is within Slack's limits.\n\n--- content ---\n" + text
+	instructions := formatForSlackInstructions + text
 
 	return &mcp.GetPromptResult{
 		Description: "Format the provided text as a Slack Block Kit message.",

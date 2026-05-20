@@ -20,6 +20,8 @@ type ConvertInput struct {
 	Mode                  string            `json:"mode,omitempty" jsonschema:"conversion strategy: auto (default), rich_text, markdown_block, or section_mrkdwn"`
 	AllowBroadcasts       bool              `json:"allow_broadcasts,omitempty" jsonschema:"if true, raw <!channel>/<!here>/<@U…> in input pass through unchanged (default false: entity-escaped for safety)"`
 	PreserveMentionTokens bool              `json:"preserve_mention_tokens,omitempty" jsonschema:"if true, already-typed Slack tokens (<@U…>, <#C…>, <!subteam^S…>, <!date^…|fb>) pass through as typed elements while catastrophic broadcasts (<!channel>/<!here>/<!everyone>) still escape; useful when the markdown comes from an upstream Slack tool result"`
+	PreferRichText        bool              `json:"prefer_rich_text,omitempty" jsonschema:"if true, auto mode prefers rich_text decomposition over the single Slack markdown block; rich_text renders identically on push notifications, search, screen readers, and the email digest where the markdown block's fallback rendering may show literal characters"`
+	DecodeHTMLEntities    bool              `json:"decode_html_entities,omitempty" jsonschema:"if true, the LLM-input normalizer decodes whitelisted HTML entities (&amp; &lt; &gt; &quot; &apos; + numeric refs) before parsing; default false; safe to enable because the resulting chars re-escape through broadcast sanitization"`
 	MentionMap            map[string]string `json:"mention_map,omitempty" jsonschema:"map of bare @handle to Slack ID (U… user, C… channel, S… usergroup); resolved to typed mention elements"`
 	ReturnPreviewURL      *bool             `json:"return_preview_url,omitempty" jsonschema:"include the Block Kit Builder preview URL in the response; defaults to true when omitted, set false to skip it"`
 	Split                 string            `json:"split,omitempty" jsonschema:"split strategy: none (default), blocks, or both — chunks the result on the >50-block axis (blocks and both are equivalent)"`
@@ -33,12 +35,13 @@ type ConvertInput struct {
 // gives us a permissive schema while still encoding the slack.Block
 // values correctly via their per-type MarshalJSON.
 type ConvertOutput struct {
-	Blocks      any      `json:"blocks" jsonschema:"the converted Slack Block Kit blocks array"`
-	Chunks      []any    `json:"chunks,omitempty" jsonschema:"when split is enabled and the conversion produces more than max_blocks_per_chunk blocks, the result is returned as one block-array per chunk"`
-	ChunkCount  int      `json:"chunk_count,omitempty" jsonschema:"number of chunks; 1 when split was a no-op or disabled"`
-	PreviewURL  string   `json:"preview_url,omitempty" jsonschema:"single-click Block Kit Builder URL for visual QA"`
-	PreviewSize int      `json:"preview_byte_size,omitempty" jsonschema:"byte length of the preview URL; URLs above 8KB may be unreliable"`
-	Warnings    []string `json:"warnings,omitempty" jsonschema:"non-fatal notes (e.g. fallback paths taken)"`
+	Blocks       any      `json:"blocks" jsonschema:"the converted Slack Block Kit blocks array"`
+	Chunks       []any    `json:"chunks,omitempty" jsonschema:"when split is enabled and the conversion produces more than max_blocks_per_chunk blocks, the result is returned as one block-array per chunk"`
+	ChunkCount   int      `json:"chunk_count,omitempty" jsonschema:"number of chunks; 1 when split was a no-op or disabled"`
+	PreviewURL   string   `json:"preview_url,omitempty" jsonschema:"single-click Block Kit Builder URL for visual QA"`
+	PreviewSize  int      `json:"preview_byte_size,omitempty" jsonschema:"byte length of the preview URL; URLs above 8KB may be unreliable"`
+	TextFallback string   `json:"text_fallback,omitempty" jsonschema:"short plain-text summary derived from the converted blocks; pass this as chat.postMessage(text=) so push notifications, search, screen readers, and the email digest render correctly"`
+	Warnings     []string `json:"warnings,omitempty" jsonschema:"non-fatal notes: normalization repairs that fired (V*/C*/R* codes), fallback-surface advisory when a markdown block was emitted, and mode-fallback notes"`
 }
 
 func (s *Server) registerConvertTool() {
@@ -82,7 +85,8 @@ func (s *Server) handleConvert(_ context.Context, _ *mcp.CallToolRequest, in Con
 		// Assign the typed []slack.Block directly; each block's MarshalJSON
 		// produces the correct wire shape when the SDK serializes the
 		// response. `any` keeps the inferred schema permissive.
-		Blocks: blocks,
+		Blocks:       blocks,
+		TextFallback: converter.DeriveTextFallback(blocks),
 	}
 	// Surface converter-side warnings (auto-mode fallback notes etc.) to
 	// the MCP caller so an LLM can flag the visual-fidelity tradeoff.
@@ -145,6 +149,8 @@ func convertInputToOptions(in ConvertInput) (converter.Options, error) {
 	}
 	opts.AllowBroadcasts = in.AllowBroadcasts
 	opts.PreserveMentionTokens = in.PreserveMentionTokens
+	opts.PreferRichText = in.PreferRichText
+	opts.DecodeHTMLEntities = in.DecodeHTMLEntities
 	if len(in.MentionMap) > 0 {
 		opts.MentionMap = in.MentionMap
 	}

@@ -46,10 +46,48 @@ Plus a **`convert` CLI** for offline testing without an MCP client.
 
 | Mode | What it produces | When to use |
 |---|---|---|
-| **`auto`** (default) | One Slack `markdown` block when the input is short, image-free, and contains no nested-block patterns. Otherwise full `rich_text` decomposition. | Most LLM workflows — let the converter pick. |
+| **`auto`** † (default) | One Slack `markdown` block when the input is short, image-free, and contains no nested-block patterns. Otherwise full `rich_text` decomposition. | Most LLM workflows — let the converter pick. |
 | **`rich_text`** | Always full decomposition into typed `rich_text` / `section` / `header` / `image` / `divider` / `table` blocks. | When you want explicit, deterministic block shapes (e.g. for downstream styling, validation, or because you don't want to delegate rendering to Slack's `markdown` parser). |
 | **`markdown_block`** | Single Slack `markdown` block — Slack's server-side parser owns the rendering. | When the input is known-good markdown and you want the smallest possible payload. Errors if input >12,000 chars. |
 | **`section_mrkdwn`** | `section` blocks with `mrkdwn` text. | Downstream consumers that need the older `section`-based shape. |
+
+† `auto` may emit a single Slack `markdown` block. That block renders
+well in the main message pane but its fallback rendering on push
+notifications, search results, screen readers, and the email digest
+can show literal `##` / `**` / `[label](url)` characters. To bias
+`auto` toward `rich_text` decomposition (which renders identically on
+every surface), pass `prefer_rich_text: true` on the tool call (CLI:
+`--prefer-rich-text`). This default will flip to `true` in the next
+major release; pin it to `false` explicitly to preserve current
+behavior across the flip.
+
+### LLM input repairs
+
+The converter runs a pre-parse normalizer that auto-repairs 13
+evidenced LLM-emission patterns before goldmark sees the input:
+
+- **V1–V4**: unclosed emphasis, inline code, fenced code, and
+  fence-with-language-no-newline.
+- **V5**: ATX header missing space (`#Title` → `# Title`).
+- **V7**: Unicode look-alikes inside URL paths (en-dash, em-dash,
+  curly quotes) → ASCII equivalents.
+- **V8**: link split across lines (`[label]\n(url)` → `[label](url)`).
+- **C1**: stray `~` between word characters escaped (`20~25` → `20\~25`).
+- **C3 / C4**: bullet / numbered-list markers missing space.
+- **C5 / C9**: trailing whitespace stripped (hard-break markers
+  preserved).
+- **C6**: borderless GFM tables get leading/trailing pipes.
+- **C7**: short table rows padded to match the header column count.
+- **R8**: `<br>` tags converted to newlines (or spaces inside table
+  cells).
+
+Two opt-in repairs (`Options.DecodeHTMLEntities` for V11 HTML
+entity decode, `Options.RepairMismatchedEmphasis` for V6's
+asterisk balancer) sit behind feature flags. Every fired repair
+surfaces in the `warnings` field of the response (codes are
+semver-stable). See
+[`docs/llm-input-recovery.md`](docs/llm-input-recovery.md) for the
+full catalog with evidence and examples.
 
 ### Supported Markdown
 
@@ -95,6 +133,32 @@ Two narrowing knobs:
   this unless the input is fully trusted.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
+
+### Troubleshooting: literal `##` / `**` / `[label](url)` in Slack
+
+If your bot's output ever appears as literal markdown characters in
+Slack instead of rendered formatting, three causes (in order of
+likelihood):
+
+1. **Wrong field on `chat.postMessage`.** The converted output goes
+   in `blocks=[...]`. Never pass the markdown source into `text=`
+   or a `section.mrkdwn` text — those parse mrkdwn (which has no
+   `## ` header syntax and no `[label](url)` link syntax). Pair
+   the returned `blocks` with the returned `text_fallback`:
+   ```python
+   chat.postMessage(channel=..., blocks=resp.blocks, text=resp.text_fallback)
+   ```
+2. **Malformed LLM input.** The library auto-repairs 13 common
+   LLM-emission patterns (see [LLM input repairs](#llm-input-repairs)
+   above and the [catalog doc](docs/llm-input-recovery.md)). The
+   response's `warnings` field reports which repairs fired.
+3. **Fallback surface degradation.** The Slack `markdown` block
+   (auto mode's default) renders well in the main channel pane but
+   its fallback rendering on push notifications, search results,
+   screen readers, and the email digest can show literal characters.
+   Set `prefer_rich_text: true` on the call (CLI:
+   `--prefer-rich-text`) — `rich_text` renders identically on every
+   surface.
 
 ## Install
 
