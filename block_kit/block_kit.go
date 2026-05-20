@@ -106,6 +106,26 @@ var ErrInputTooDeeplyNested = converter.ErrInputTooDeeplyNested
 // emitted as a single Slack markdown block but exceeds the 12,000-char cap.
 var ErrMarkdownBlockTooLarge = converter.ErrMarkdownBlockTooLarge
 
+// MarkdownBlockFallbackSurfacesWarning is the deterministic advisory
+// auto-mode emits whenever it picks a single Slack `markdown` block.
+// External callers can string-match this constant to detect the
+// fallback-surface caveat (push notifications, search results, screen
+// readers, email digest). Set Options.PreferRichText to opt out.
+const MarkdownBlockFallbackSurfacesWarning = converter.MarkdownBlockFallbackSurfacesWarning
+
+// TextFallbackMaxChars is the upper bound on the plain-text fallback
+// string DeriveTextFallback returns.
+const TextFallbackMaxChars = converter.TextFallbackMaxChars
+
+// DeriveTextFallback returns a short plain-text summary derived from
+// converted blocks, suitable for `chat.postMessage(text=)`. Slack
+// uses that string verbatim on push notifications, search results,
+// screen readers, and the email digest. Returns empty when no usable
+// text candidate is found.
+func DeriveTextFallback(blocks []slack.Block) string {
+	return converter.DeriveTextFallback(blocks)
+}
+
 // DefaultOptions returns Options with the recommended defaults applied.
 func DefaultOptions() Options { return converter.DefaultOptions() }
 

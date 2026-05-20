@@ -84,3 +84,34 @@ func TestPublicAPI_StrictValidator_FlagsDeprecated(t *testing.T) {
 	// documents the API surface.
 	_ = result
 }
+
+func TestPublicAPI_DeriveTextFallback(t *testing.T) {
+	r, _ := block_kit.NewConverter(block_kit.DefaultOptions())
+	blocks, _ := r.Convert("# Release notes\n\nBody")
+	got := block_kit.DeriveTextFallback(blocks)
+	if got == "" {
+		t.Error("DeriveTextFallback returned empty for non-trivial input")
+	}
+	if !strings.Contains(got, "Release notes") {
+		t.Errorf("expected header text in fallback, got %q", got)
+	}
+}
+
+func TestPublicAPI_SurfaceWarningConstantExposed(t *testing.T) {
+	if block_kit.MarkdownBlockFallbackSurfacesWarning == "" {
+		t.Fatal("MarkdownBlockFallbackSurfacesWarning is empty")
+	}
+	// Sanity: the constant must mention the surfaces it documents so
+	// downstream string matchers stay stable across refactors.
+	for _, want := range []string{"push notifications", "search", "screen readers"} {
+		if !strings.Contains(block_kit.MarkdownBlockFallbackSurfacesWarning, want) {
+			t.Errorf("warning missing expected surface mention: %q", want)
+		}
+	}
+}
+
+func TestPublicAPI_TextFallbackMaxCharsExposed(t *testing.T) {
+	if block_kit.TextFallbackMaxChars != 150 {
+		t.Errorf("TextFallbackMaxChars = %d, want 150 (semver-stable)", block_kit.TextFallbackMaxChars)
+	}
+}
