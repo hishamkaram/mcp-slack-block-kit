@@ -45,9 +45,19 @@ func applyBRTag(lines []Line, _ Options) ([]Line, bool) {
 		}
 		// Outside tables: split the line on `<br>` boundaries and
 		// emit each segment as its own line, preserving the visual
-		// break the author intended.
+		// break the author intended. Empty segments (e.g. a
+		// trailing `<br>`) become LineBlank so downstream
+		// paragraph-aware repairs (V1) don't merge them with
+		// content lines on a subsequent pass — the classifier
+		// would later re-tag them LineBlank anyway, so producing
+		// the consistent tag here is what makes the pipeline
+		// idempotent.
 		for _, seg := range brTag.Split(original, -1) {
-			outLines = append(outLines, Line{Text: seg, Kind: LineProse})
+			kind := LineProse
+			if seg == "" {
+				kind = LineBlank
+			}
+			outLines = append(outLines, Line{Text: seg, Kind: kind})
 		}
 	}
 	return outLines, fired

@@ -1,7 +1,5 @@
 package normalizer
 
-import "strings"
-
 // applyUnclosedEmphasis balances `**bold**` and `*italic*` markers
 // inside a paragraph when the model stopped before closing the
 // emphasis. Conservative: operates per paragraph (delimited by
@@ -27,16 +25,16 @@ func applyUnclosedEmphasis(lines []Line, _ Options) ([]Line, bool) {
 		if len(paragraph) == 0 {
 			return
 		}
-		var b strings.Builder
-		for i, idx := range paragraph {
-			if i > 0 {
-				b.WriteByte('\n')
-			}
-			b.WriteString(lines[idx].Text)
-		}
-		appended := balanceTrailingEmphasis(b.String())
+		// V1 only operates on the LAST line of the paragraph. Multi-
+		// line emphasis where the opener sits on an earlier line is
+		// genuinely ambiguous (the closer could belong to either
+		// line). Restricting to the last line keeps the repair
+		// local and idempotent — appending a `*` to the last line
+		// can't create new patterns elsewhere (verified by fuzz
+		// against `*0\n# `).
+		lastIdx := paragraph[len(paragraph)-1]
+		appended := balanceTrailingEmphasis(lines[lastIdx].Text)
 		if appended != "" {
-			lastIdx := paragraph[len(paragraph)-1]
 			lines[lastIdx].Text += appended
 			fired = true
 		}

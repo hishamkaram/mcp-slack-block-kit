@@ -120,6 +120,13 @@ func Normalize(src string, opts Options) (string, []string) {
 		lines = l
 		fired.add("V3")
 	}
+	// V6 runs BEFORE V1: collapsing mismatched pairs to the smaller
+	// count can turn an unmatched **opener into a matched *italic*,
+	// removing work for V1. Gated by Options.RepairMismatchedEmphasis.
+	if l, ok := applyAsteriskBalance(lines, opts); ok { // V6
+		lines = l
+		fired.add("V6")
+	}
 	// V1 runs BEFORE V2 in pipeline order: an emphasis appender that
 	// turns a line ending in `` ` `` into one ending in `*` would
 	// otherwise re-arm V2 on the next pass, breaking idempotence.

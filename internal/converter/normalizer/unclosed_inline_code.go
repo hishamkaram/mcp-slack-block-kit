@@ -21,7 +21,7 @@ func applyUnclosedInlineCode(lines []Line, _ Options) ([]Line, bool) {
 	var fired bool
 	for i := range lines {
 		switch lines[i].Kind {
-		case LineFenceOpen, LineFenceContent, LineFenceClose, LineIndentedCode:
+		case LineFenceOpen, LineFenceContent, LineFenceClose, LineIndentedCode, LineTable:
 			continue
 		}
 		text := lines[i].Text
