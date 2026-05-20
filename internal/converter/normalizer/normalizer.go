@@ -51,22 +51,45 @@ func Normalize(src string, opts Options) (string, []string) {
 	lines := classify(src)
 	fired := newFiredSet()
 
-	// Pipeline order. Each step is a no-op until its concrete repair
-	// lands in a later commit; the comment block above the call cites
-	// the catalog code so reviewers can trace the design to the
-	// evidence.
+	// Pipeline order. Catalog codes (V*, C*, R*) refer to entries in
+	// docs/llm-input-recovery.md. Order matters:
+	//   - Structural rewrites that change line count run FIRST, so
+	//     later line-local repairs see the final line layout.
+	//   - Paragraph-level balance for unclosed constructs runs LAST,
+	//     so earlier edits don't perturb closing counts.
 	//
-	// Structural-space repairs first (they shift byte offsets):
-	//   C5/C9 trailing whitespace
-	//   V5    ATX header without space
-	//   C3    bullet without space
-	//   C4    numbered list without space
+	// Structural rewrite: split-link merge collapses `[label]\n(url)`
+	// pairs into single lines. This MUST precede the list-marker
+	// repairs (C3, C4) — without it, the post-merge line would
+	// become a sibling list-item for the next `-` line and the C3
+	// peer check would re-fire on a second Normalize pass, breaking
+	// idempotence.
+	if l, ok := applySplitLink(lines, opts); ok { // V8
+		lines = l
+		fired.add("V8")
+	}
+	// Line-local space repairs.
+	if l, ok := applyATXHeaderSpace(lines, opts); ok { // V5
+		lines = l
+		fired.add("V5")
+	}
+	if l, ok := applyBulletNoSpace(lines, opts); ok { // C3
+		lines = l
+		fired.add("C3")
+	}
+	if l, ok := applyNumberedNoSpace(lines, opts); ok { // C4
+		lines = l
+		fired.add("C4")
+	}
+	//
+	// Future pipeline stages (placeholder list; concrete repairs land
+	// in subsequent commits):
 	//
 	// URL hygiene:
 	//   V7    smart quotes / em-dashes in URLs
 	//
 	// Inline structure:
-	//   V8    split-link `[label]\n(url)` → `[label](url)`
+	//   C5/C9 trailing whitespace
 	//   C1    single-tilde-in-word escape
 	//   C6    borderless table edge-pipe insertion
 	//   R8    <br> → \n outside table cells
@@ -82,11 +105,10 @@ func Normalize(src string, opts Options) (string, []string) {
 	//   V4    fence-with-language-no-newline
 	//   V1    unclosed emphasis
 
-	_ = opts // referenced by future repairs
-
 	if !fired.any() {
-		// No repair fired and the slice was untouched. Returning the
-		// original string avoids the round-trip cost of reassemble.
+		// No repair fired. Returning the original string preserves
+		// any trailing bytes that classify+reassemble would normalize
+		// (e.g. a missing trailing newline).
 		return src, nil
 	}
 	return reassemble(lines), fired.codes()
