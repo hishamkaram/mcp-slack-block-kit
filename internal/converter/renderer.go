@@ -10,7 +10,23 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+
+	"github.com/hishamkaram/mcp-slack-block-kit/internal/converter/normalizer"
 )
+
+// MarkdownBlockFallbackSurfacesWarning is the deterministic advisory
+// the auto-mode picker emits whenever it selects a single Slack
+// `markdown` block. Slack server-side-renders the block on modern
+// clients, but the fallback rendering on push notifications, search
+// results, screen readers, and the email digest may show literal
+// `##`/`**`/`[label](url)` characters. To avoid this, set
+// Options.PreferRichText to true and pass a derived plain-text
+// summary as the `chat.postMessage(text=)` parameter.
+const MarkdownBlockFallbackSurfacesWarning = "auto mode emitted a Slack " +
+	"`markdown` block. Fallback rendering on push notifications, search, " +
+	"screen readers, and the email digest may show literal `##`, `**`, or " +
+	"`[label](url)` characters. Pass the converter's derived text fallback " +
+	"as chat.postMessage(text=) and consider setting prefer_rich_text=true."
 
 // Renderer converts markdown into Slack Block Kit blocks. It holds a
 // preconfigured goldmark.Markdown and is safe to reuse across requests
@@ -108,6 +124,23 @@ func (r *Renderer) ConvertWithWarnings(input string) ([]slack.Block, []string, e
 	// pattern. See internal/converter/slack_mrkdwn_links.go.
 	input = rewriteSlackURLForms(input)
 
+	// LLM-input recovery pipeline. Repairs malformed markdown patterns
+	// LLMs commonly emit (links split across lines, headers without
+	// space, unclosed code fences, smart quotes in URLs, …). The
+	// fired-codes slice surfaces which repairs applied so the caller
+	// can audit the chain. See internal/converter/normalizer/.
+	var normWarnings []string
+	if normalized, fired := normalizer.Normalize(input, normalizer.Options{
+		DecodeHTMLEntities:       r.opts.DecodeHTMLEntities,
+		RepairMismatchedEmphasis: r.opts.RepairMismatchedEmphasis,
+	}); len(fired) > 0 {
+		input = normalized
+		normWarnings = append(normWarnings,
+			"normalized input (LLM-mistake repairs fired: "+
+				strings.Join(fired, ", ")+
+				"). See docs/llm-input-recovery.md for codes.")
+	}
+
 	// Parse once, then dispatch on mode. Previously ModeMarkdownBlock
 	// short-circuited before the parse; now the markdown_block emitter is
 	// AST-driven and needs the AST, so the parse runs unconditionally.
@@ -128,14 +161,15 @@ func (r *Renderer) ConvertWithWarnings(input string) ([]slack.Block, []string, e
 
 	if r.opts.Mode == ModeMarkdownBlock {
 		blocks, err := r.emitMarkdownBlock(root, src)
-		return blocks, nil, err
+		return blocks, normWarnings, err
 	}
 
-	var warnings []string
+	warnings := normWarnings
 	if r.opts.Mode == ModeAuto {
 		if r.shouldUseMarkdownBlock(input, root) {
 			blocks, err := r.emitMarkdownBlock(root, src)
-			return blocks, nil, err
+			warnings = append(warnings, MarkdownBlockFallbackSurfacesWarning)
+			return blocks, warnings, err
 		}
 		// Picker said no. If the reason was a nested-block pattern (the
 		// new gating layer), emit one warning naming the patterns so the

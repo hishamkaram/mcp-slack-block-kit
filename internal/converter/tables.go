@@ -38,6 +38,22 @@ func (w *walker) handleTable(t *extast.Table) error {
 		}
 	}
 
+	// Pad short rows up to the header's column count. Slack's
+	// chat.postMessage rejects table blocks whose data rows have a
+	// different cell count than the header — and LLM-emitted tables
+	// commonly under-fill the trailing cell. The padding cell is a
+	// single empty rich_text_block so the structure stays well-formed.
+	// Catalog code: C7. See internal/converter/normalizer's catalog
+	// for the pattern; this is the layer-B (post-AST) half of that
+	// repair.
+	if want := len(header); want > 0 {
+		for i := range rows {
+			for len(rows[i]) < want {
+				rows[i] = append(rows[i], emptyTableCell())
+			}
+		}
+	}
+
 	colSettings := buildColumnSettings(t.Alignments)
 	if len(colSettings) > maxTableCols {
 		colSettings = colSettings[:maxTableCols]
@@ -83,6 +99,26 @@ func (w *walker) handleTable(t *extast.Table) error {
 		w.blocks = append(w.blocks, tb)
 	}
 	return nil
+}
+
+// emptyTableCell returns the rich_text shape used to pad a table row
+// whose column count was under the header's. Slack rejects mismatched
+// column counts; an empty cell preserves the structure without
+// inserting any visible content.
+//
+// We mirror the empty-cell fallback in renderRowCells (a single
+// zero-length text element) rather than calling NewRichTextSection()
+// with zero arguments. The latter leaves Elements as a nil slice,
+// which slack-go's RichTextSection serializes as `"elements":null`
+// (the field has no omitempty tag); Slack's Block Kit schema
+// requires an array there, so a null would be rejected at
+// chat.postMessage time. Pinned by TestTableShortRowsPadded which
+// now also marshals + greps the JSON shape.
+func emptyTableCell() *slack.RichTextBlock {
+	return slack.NewRichTextBlock(
+		"",
+		slack.NewRichTextSection(slack.NewRichTextSectionTextElement("", nil)),
+	)
 }
 
 // collectTableRows walks a Table node and returns its header cells and data

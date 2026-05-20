@@ -69,3 +69,60 @@ LLM-generated content.
 - `split_blocks` — chunk an oversized payload to the 50-block limit.
 - `preview_block_kit` — get a Block Kit Builder URL for visual QA.
 - `block_kit_to_markdown` — the inverse conversion (lossy).
+
+## Best-effort posting recipe
+
+`convert_markdown_to_block_kit` returns:
+
+- `blocks` — the typed Block Kit array.
+- `text_fallback` — a derived plain-text summary (≤ 150 chars).
+- `warnings` — repair codes (`normalized input (LLM-mistake repairs
+  fired: V8, C3)`) plus, in auto mode, the markdown-block
+  fallback-surface advisory.
+
+Wire them into `chat.postMessage` like this:
+
+```
+chat.postMessage(
+    channel = "...",
+    blocks  = response.blocks,         // typed blocks
+    text    = response.text_fallback,  // for notifications / search
+)
+```
+
+Never put the markdown source into `text:` — Slack renders that field
+as mrkdwn, so literal `##`/`**`/`[label](url)` characters appear.
+
+## Troubleshooting: literal `##`, `**`, `[label](url)` appear in Slack
+
+Three causes, in order of likelihood:
+
+1. **The caller wired the result wrong.** Pass the returned `blocks`
+   array as `chat.postMessage(blocks=...)` and the returned
+   `text_fallback` as `chat.postMessage(text=...)`. Never put the
+   markdown source in either field.
+2. **The LLM input was malformed.** This server auto-repairs 13
+   evidenced LLM-emission patterns (link split across lines,
+   unclosed emphasis / inline code / fenced code, ATX header
+   without space, bullet/numbered list without space, smart quotes
+   / em-dashes in URLs, single-tilde in word, borderless tables,
+   `<br>` tags, plus padded short table rows). The response's
+   `warnings` field reports the codes that fired (e.g.
+   `normalized input (LLM-mistake repairs fired: V8, C3)`). The
+   full catalog with evidence and examples lives at
+   `docs/llm-input-recovery.md`.
+3. **Fallback surface degradation.** The Slack `markdown` block
+   (auto mode's default for short, simple output) renders well in
+   the main channel pane but on push notifications, search
+   results, screen readers, and the email digest it can show
+   literal markdown characters. Fix options:
+   - Set `prefer_rich_text: true` on the call. The picker then
+     chooses `rich_text` decomposition for the same inputs;
+     `rich_text` renders identically on every Slack surface.
+   - Or pass `mode: "rich_text"` to force decomposition.
+   - Always supply the `text_fallback` as `chat.postMessage(text=)`
+     — Slack uses that string verbatim on every fallback surface.
+
+The default of `prefer_rich_text` will flip to `true` in the next
+major release. To pin the current behavior across the flip, set it
+explicitly to `false`.

@@ -164,6 +164,93 @@ func TestConvertTool_AutoMode_PicksMarkdownBlock(t *testing.T) {
 	}
 }
 
+func TestConvertTool_PreferRichText_RoutesToRichText(t *testing.T) {
+	session, cleanup := newTestServer(t)
+	defer cleanup()
+
+	r := callTool(t, session, "convert_markdown_to_block_kit", ConvertInput{
+		Markdown:       "Just a short paragraph.",
+		Mode:           "auto",
+		PreferRichText: true,
+	})
+
+	var out ConvertOutput
+	extractStructured(t, r, &out)
+	body := blocksJSON(t, out)
+	if strings.Contains(body, "\"markdown\"") {
+		t.Errorf("prefer_rich_text=true should suppress markdown block: %s", body)
+	}
+}
+
+func TestConvertTool_TextFallback_PopulatedInResponse(t *testing.T) {
+	session, cleanup := newTestServer(t)
+	defer cleanup()
+
+	r := callTool(t, session, "convert_markdown_to_block_kit", ConvertInput{
+		Markdown: "# Release notes\n\nbody text",
+		Mode:     "rich_text",
+	})
+
+	var out ConvertOutput
+	extractStructured(t, r, &out)
+	if out.TextFallback == "" {
+		t.Fatal("text_fallback should not be empty for header+body input")
+	}
+	if !strings.Contains(out.TextFallback, "Release notes") {
+		t.Errorf("text_fallback should lead with header text: %q", out.TextFallback)
+	}
+}
+
+func TestConvertTool_AutoMarkdownBlock_SurfaceWarningInResponse(t *testing.T) {
+	session, cleanup := newTestServer(t)
+	defer cleanup()
+
+	r := callTool(t, session, "convert_markdown_to_block_kit", ConvertInput{
+		Markdown: "Short prose.",
+		Mode:     "auto",
+	})
+
+	var out ConvertOutput
+	extractStructured(t, r, &out)
+	found := false
+	for _, w := range out.Warnings {
+		if strings.Contains(w, "push notifications") &&
+			strings.Contains(w, "prefer_rich_text") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected fallback-surface advisory in warnings, got %v", out.Warnings)
+	}
+}
+
+func TestConvertTool_Normalization_RepairsSplitLink(t *testing.T) {
+	session, cleanup := newTestServer(t)
+	defer cleanup()
+
+	r := callTool(t, session, "convert_markdown_to_block_kit", ConvertInput{
+		Markdown:       "- [Project Folder]\n(https://drive.example.com/folders/abc)",
+		Mode:           "auto",
+		PreferRichText: true,
+	})
+
+	var out ConvertOutput
+	extractStructured(t, r, &out)
+	body := blocksJSON(t, out)
+	if !strings.Contains(body, "https://drive.example.com/folders/abc") {
+		t.Errorf("expected URL to survive into typed link element: %s", body)
+	}
+	hasV8 := false
+	for _, w := range out.Warnings {
+		if strings.Contains(w, "V8") {
+			hasV8 = true
+		}
+	}
+	if !hasV8 {
+		t.Errorf("expected V8 normalization warning, got %v", out.Warnings)
+	}
+}
+
 func TestConvertTool_MentionMap_ResolvesUsers(t *testing.T) {
 	session, cleanup := newTestServer(t)
 	defer cleanup()
@@ -640,6 +727,15 @@ func TestPrompts_FormatForSlack_ListedAndRenders(t *testing.T) {
 	tc, ok := got.Messages[0].Content.(*mcp.TextContent)
 	if !ok || !strings.Contains(tc.Text, "release notes for v2") {
 		t.Errorf("prompt message did not embed the argument: %+v", got.Messages[0].Content)
+	}
+	// Pin the recipe the prompt is supposed to deliver: callers must
+	// know to wire blocks/text_fallback into the right chat.postMessage
+	// fields and bias toward rich_text for accessibility-sensitive
+	// channels.
+	for _, want := range []string{"blocks:", "text:", "text_fallback", "prefer_rich_text"} {
+		if !strings.Contains(tc.Text, want) {
+			t.Errorf("prompt body missing required guidance fragment %q", want)
+		}
 	}
 }
 

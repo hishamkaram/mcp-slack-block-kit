@@ -8,10 +8,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **normalizer**: new `internal/converter/normalizer` package that
+  repairs 13 evidenced LLM-emission patterns before goldmark parses
+  the input. Always-on repairs:
+  - **V1** unclosed emphasis (`*italic`, `**bold`) — appends a
+    matching closer when there is a single left-flanking opener with
+    word content after it.
+  - **V2** unclosed inline code (`` `code ``) — appends a closer of
+    the unmatched run's length, respecting CommonMark code-span
+    nesting (`` ``a `b`` `` is correctly recognized as balanced).
+  - **V3** unclosed fenced code block (`` ``` `` or `~~~`) — appends
+    a closing fence at EOF to prevent the rest of the document from
+    being swallowed.
+  - **V4** fence-with-language-no-newline
+    (``` ```go fmt.Println("hi")``` ```) — splits onto canonical
+    three lines; conservative known-languages whitelist.
+  - **V5** ATX header without space (`#Title` → `# Title`).
+  - **V7** Unicode look-alikes inside URL paths (en-dash, em-dash,
+    curly quotes, ellipsis) → ASCII equivalents; em-dashes in prose
+    untouched.
+  - **V8** link split across lines (`[label]\n(url)` → `[label](url)`).
+  - **C1** stray tilde between word characters escaped (`20~25` →
+    `20\~25`); preserves authored `~~` strikethrough.
+  - **C3** bullet marker without space (`-item` → `- item`).
+  - **C4** numbered marker without space (`1.item` → `1. item`).
+  - **C5/C9** trailing whitespace stripped (CommonMark hard-break
+    marker preserved).
+  - **C6** borderless GFM tables get leading/trailing pipes.
+  - **C7** table data rows shorter than the header padded with empty
+    cells (layer-B repair in `internal/converter/tables.go`).
+  - **R8** `<br>` tags converted to newlines outside table cells and
+    spaces inside table cells.
+
+  Two opt-in repairs:
+  - **V11** whitelisted HTML entity decode (`&amp; &lt; &gt; &quot;
+    &apos;` + numeric refs) gated by `Options.DecodeHTMLEntities`.
+  - **V6** asterisk-pair balancer (`**italic*` → `*italic*`) gated
+    by `Options.RepairMismatchedEmphasis`.
+
+  Every fired repair surfaces in the response's `warnings` field as
+  a single combined string (`normalized input (LLM-mistake repairs
+  fired: V8, C3)`). Codes are semver-stable; the full catalog with
+  evidence and examples lives at `docs/llm-input-recovery.md`.
+
+  Hardening: 95%+ unit-test coverage on the normalizer package,
+  five property tests (idempotence, length bound, no-broadcast-
+  smuggling, code-block preservation), a `FuzzNormalize` target run
+  for 60s+ across multiple commits with zero failures.
+
+- **converter**: `Options.PreferRichText` (default `false`) — opt-in
+  bias toward `rich_text` decomposition over the single Slack
+  `markdown` block. `rich_text` renders identically on push
+  notifications, search results, screen readers, and the email
+  digest, where the `markdown` block's fallback rendering can show
+  literal `##` / `**` / `[label](url)` characters. Surfaced as
+  `prefer_rich_text` on the MCP convert tool and `--prefer-rich-text`
+  on the CLI. Re-exported via `block_kit/`.
+- **converter**: `Options.DecodeHTMLEntities` (default `false`) —
+  see V11 above. Surfaced as `decode_html_entities` /
+  `--decode-html-entities`.
+- **converter**: `MarkdownBlockFallbackSurfacesWarning` constant.
+  Auto-mode emits this advisory whenever it picks a single
+  `markdown` block, naming the fallback surfaces where rendering
+  degrades. Re-exported via `block_kit/`.
+- **converter**: `DeriveTextFallback([]slack.Block) string` returns
+  a 150-char plain-text summary suitable for
+  `chat.postMessage(text=)`. Strips Slack mrkdwn, CommonMark links,
+  ATX hashes, and blockquote prefixes; header blocks dominate.
+  Re-exported via `block_kit/` together with the
+  `TextFallbackMaxChars` constant.
+- **server**: `ConvertOutput.text_fallback` field carries the
+  derived summary in the MCP convert-tool response.
 
 ### Changed
+- **prompts**: the `format_for_slack` MCP prompt body now instructs
+  callers to pass the returned `blocks` as `chat.postMessage(blocks=)`,
+  the returned `text_fallback` as `chat.postMessage(text=)`, to
+  surface `warnings` to the user (especially normalization repair
+  codes and the fallback-surface advisory), and to set
+  `prefer_rich_text=true` for accessibility-sensitive channels.
 
-### Fixed
+### Deprecated
+- The default of `Options.PreferRichText` will flip from `false` to
+  `true` in the next major release. When the picker was first
+  written, the Slack `markdown` block was the only block type that
+  supported headers, tables, task-lists, dividers, and
+  code-with-language — so biasing auto-mode toward it was the right
+  call. Slack's March 6, 2026 expansion of `rich_text` removed that
+  advantage; `rich_text` now renders identically on every surface,
+  the `markdown` block does not. To pin the current behavior across
+  the flip, set `PreferRichText: false` explicitly.
+
+### Fixed (review feedback)
+- **normalizer**: C5 trailing-whitespace repair now skips fenced
+  and indented code blocks (CommonMark §4.5 literal content) and
+  preserves the §6.7 hard line break in any 2+-space form in
+  genuine prose context (not list items, not table delimiter rows
+  — those still strip).
+- **normalizer**: C3 bullet repair skips lines whose marker
+  character repeats (emphasis spans like `**bold**` / `*italic*`
+  between two bullet items are no longer misrewritten into
+  `* *bold**`).
+- **normalizer**: C4 numbered repair regex and peer-check now
+  require non-digit content (decimal pairs like `1.5 GB free\n2.3
+  GB used` and version triples no longer mutually validate as a
+  numbered list).
+- **normalizer**: R8 (`<br>`) and V7 (URL Unicode) honor a new
+  inline-code-span mask so content inside backticks (CommonMark
+  §6.1) survives unchanged. Examples that previously corrupted:
+  `` Use `<br>` for HTML breaks `` (R8) and
+  `` `array[1](https://x.com/v2—doc)` `` (V7).
+- **normalizer**: V4's one-line fence split no longer leaves
+  trailing `LineFenceContent` tags that broke idempotence between
+  passes. The `classify()` walker now treats a fence-opener whose
+  info string already contains a matching closing run as
+  `LineProse` (spec-aligns with CommonMark §4.5 — info strings
+  cannot contain the fence character).
+- **normalizer**: V11 HTML entity decoder is now actually wired
+  into the pipeline (was previously a dead Options field). V11
+  decodes the five whitelisted XML entities + numeric refs;
+  results re-escape through `sanitizeBroadcasts` so broadcast
+  tokens cannot round-trip through `&lt;!channel&gt;` → live
+  `<!channel>`. The matching `Options.DecodeHTMLEntities`,
+  `decode_html_entities` MCP field, and `--decode-html-entities`
+  CLI flag now have visible effect.
+- **normalizer**: V6 asterisk balancer is now reachable from the
+  public API. New `Options.RepairMismatchedEmphasis`,
+  `repair_mismatched_emphasis` MCP field, and
+  `--repair-mismatched-emphasis` CLI flag thread the existing
+  internal flag through every layer.
+- **converter (tables)**: `emptyTableCell` now emits a non-null
+  `elements` array (mirrors `renderRowCells`' empty-cell fallback
+  shape). Was dead code today because goldmark pre-pads short
+  rows; future-proofs against any wiring change.
+
+### Docs
+- New `docs/llm-input-recovery.md` catalog with evidence for every
+  normalizer pattern (issue links, blog references, spec citations).
+  Now also documents the inline-code-span guard, the broadcast-
+  safety round-trip for V11, and the MCP/CLI knob names for the
+  two opt-in repairs.
+- `internal/server/cheatsheet.md` (the `block-kit-cheatsheet` MCP
+  resource) gained a "Best-effort posting recipe" section and a
+  "Troubleshooting: literal `##` / `**` / `[label](url)` appear in
+  Slack" section walking through the three diagnostic causes.
+- `README.md` gained an "LLM input repairs" section listing every
+  normalizer code, a footnote on the modes table explaining the
+  `auto`-mode fallback caveat, and a "Troubleshooting" section
+  matching the cheatsheet's diagnostic walk.
 
 ---
 

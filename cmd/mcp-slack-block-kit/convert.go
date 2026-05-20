@@ -27,13 +27,16 @@ import (
 //	cat doc.md | mcp-slack-block-kit convert --preview > payload.json
 func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.Command {
 	var (
-		mode                  string
-		previewFlag           bool
-		allowBroadcasts       bool
-		preserveMentionTokens bool
-		blockIDPrefix         string
-		maxInputBytes         int
-		pretty                bool
+		mode                     string
+		previewFlag              bool
+		allowBroadcasts          bool
+		preserveMentionTokens    bool
+		preferRichText           bool
+		decodeHTMLEntities       bool
+		repairMismatchedEmphasis bool
+		blockIDPrefix            string
+		maxInputBytes            int
+		pretty                   bool
 	)
 
 	cmd := &cobra.Command{
@@ -56,6 +59,9 @@ func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.C
 			}
 			opts.AllowBroadcasts = allowBroadcasts
 			opts.PreserveMentionTokens = preserveMentionTokens
+			opts.PreferRichText = preferRichText
+			opts.DecodeHTMLEntities = decodeHTMLEntities
+			opts.RepairMismatchedEmphasis = repairMismatchedEmphasis
 			if blockIDPrefix != "" {
 				opts.BlockIDPrefix = blockIDPrefix
 			}
@@ -68,14 +74,20 @@ func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.C
 				return fmt.Errorf("converter init: %w", err)
 			}
 
-			blocks, err := r.Convert(string(input))
+			blocks, warnings, err := r.ConvertWithWarnings(string(input))
 			if err != nil {
 				return fmt.Errorf("convert: %w", err)
 			}
 
 			payload := struct {
-				Blocks any `json:"blocks"`
-			}{Blocks: blocks}
+				Blocks       any      `json:"blocks"`
+				TextFallback string   `json:"text_fallback,omitempty"`
+				Warnings     []string `json:"warnings,omitempty"`
+			}{
+				Blocks:       blocks,
+				TextFallback: converter.DeriveTextFallback(blocks),
+				Warnings:     warnings,
+			}
 
 			var encoded []byte
 			if pretty {
@@ -123,6 +135,12 @@ func newConvertCmd(stderr io.Writer, stdout io.Writer, stdin io.Reader) *cobra.C
 		"allow raw <!channel>/<!here>/<@U…> in input to pass through unescaped (DEFAULT FALSE for safety)")
 	cmd.Flags().BoolVar(&preserveMentionTokens, "preserve-mention-tokens", false,
 		"allow already-typed Slack mention tokens (<@U…>/<#C…>/<!subteam^S…>/<!date^…|fb>) to pass through while still escaping catastrophic broadcasts (<!channel>/<!here>/<!everyone>)")
+	cmd.Flags().BoolVar(&preferRichText, "prefer-rich-text", false,
+		"bias auto mode toward rich_text decomposition over the single markdown block; rich_text renders identically on every Slack surface (push, search, screen readers, email digest)")
+	cmd.Flags().BoolVar(&decodeHTMLEntities, "decode-html-entities", false,
+		"decode whitelisted HTML entities (&amp; &lt; &gt; &quot; &apos; + numeric refs) before parsing")
+	cmd.Flags().BoolVar(&repairMismatchedEmphasis, "repair-mismatched-emphasis", false,
+		"enable the V6 asterisk balancer (**italic* → *italic*); default off due to false-positive risk on deliberate asymmetric asterisks")
 	cmd.Flags().StringVar(&blockIDPrefix, "block-id-prefix", "",
 		"optional prefix for generated block_id values")
 	cmd.Flags().IntVar(&maxInputBytes, "max-input-bytes", 0,
