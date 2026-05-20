@@ -1,0 +1,97 @@
+package normalizer
+
+import (
+	"regexp"
+	"unicode/utf8"
+)
+
+// urlInLink matches the URL portion of a CommonMark inline link, an
+// autolink, or an image. We rewrite Unicode look-alikes ONLY inside
+// these spans so prose like "the spec — see here" keeps its em-dash.
+//
+// Captures (1) the opening delimiter, (2) the URL content, (3) the
+// closing delimiter. The URL content excludes the closing delimiter
+// character — image+link parens match `[^)]*`, autolinks match
+// `[^>]*`.
+var (
+	urlInBrackets = regexp.MustCompile(`(\]\()([^)\n]*)(\))`)
+	urlInAutolink = regexp.MustCompile(`(<)([a-zA-Z][a-zA-Z0-9+.\-]{1,31}:[^<>\s]*)(>)`)
+)
+
+// unicodeToASCII maps the lookalike characters LLMs habitually emit
+// inside URL paths to their ASCII equivalents. Per Briskly's and
+// Context-Link.ai's reporting, em-dashes / en-dashes / curly quotes
+// in URLs are the dominant breakage mode after split-links — the
+// resulting URL works visually but fails on click because the path
+// changed.
+var unicodeToASCII = map[rune]string{
+	'–': "-",   // en-dash
+	'—': "-",   // em-dash
+	'‘': "'",   // left single quote
+	'’': "'",   // right single quote (also apostrophe)
+	'“': `"`,   // left double quote
+	'”': `"`,   // right double quote
+	'…': "...", // ellipsis (rare in URLs, but seen)
+}
+
+// applyURLUnicode rewrites Unicode look-alike characters inside URL
+// content. Operates on every line regardless of Kind because the
+// regexes only match URL-delimited spans — they cannot match in
+// fenced code blocks (where there are no link constructs), and even
+// if they did the rewrite is safe (ASCII-equivalent).
+//
+// Catalog code: V7. Evidence: Context-Link.ai "Claude Em-Dash
+// Problem"; Briskly "How to Stop AI Em Dashes (Claude, ChatGPT,
+// Gemini)" — em-dashes break URLs, filenames, CSV parsing, code.
+func applyURLUnicode(lines []Line, _ Options) ([]Line, bool) {
+	var fired bool
+	for i := range lines {
+		// Skip code contexts: the regex couldn't match anyway, but
+		// skipping is cheaper than running the regex.
+		switch lines[i].Kind {
+		case LineFenceOpen, LineFenceContent, LineFenceClose, LineIndentedCode:
+			continue
+		}
+		original := lines[i].Text
+		rewritten := urlInBrackets.ReplaceAllStringFunc(original,
+			func(match string) string {
+				m := urlInBrackets.FindStringSubmatch(match)
+				return m[1] + replaceUnicode(m[2]) + m[3]
+			})
+		rewritten = urlInAutolink.ReplaceAllStringFunc(rewritten,
+			func(match string) string {
+				m := urlInAutolink.FindStringSubmatch(match)
+				return m[1] + replaceUnicode(m[2]) + m[3]
+			})
+		if rewritten != original {
+			lines[i].Text = rewritten
+			fired = true
+		}
+	}
+	return lines, fired
+}
+
+// replaceUnicode walks s and replaces every rune that has an entry in
+// unicodeToASCII. Allocates only when at least one replacement is
+// needed.
+func replaceUnicode(s string) string {
+	hasAny := false
+	for _, r := range s {
+		if _, ok := unicodeToASCII[r]; ok {
+			hasAny = true
+			break
+		}
+	}
+	if !hasAny {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	for _, r := range s {
+		if repl, ok := unicodeToASCII[r]; ok {
+			out = append(out, repl...)
+			continue
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return string(out)
+}

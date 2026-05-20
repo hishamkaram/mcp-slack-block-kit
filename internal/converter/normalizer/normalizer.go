@@ -58,15 +58,27 @@ func Normalize(src string, opts Options) (string, []string) {
 	//   - Paragraph-level balance for unclosed constructs runs LAST,
 	//     so earlier edits don't perturb closing counts.
 	//
-	// Structural rewrite: split-link merge collapses `[label]\n(url)`
-	// pairs into single lines. This MUST precede the list-marker
-	// repairs (C3, C4) — without it, the post-merge line would
-	// become a sibling list-item for the next `-` line and the C3
-	// peer check would re-fire on a second Normalize pass, breaking
-	// idempotence.
+	// Structural rewrites that change line count run first.
+	// br_tag can split a single prose line into multiple lines, so it
+	// runs before any line-pair-merging repair.
+	if l, ok := applyBRTag(lines, opts); ok { // R8
+		lines = l
+		fired.add("R8")
+	}
+	// Split-link merge collapses `[label]\n(url)` pairs. MUST precede
+	// the list-marker repairs (C3, C4) — without it, the post-merge
+	// line would become a sibling list-item for the next `-` line and
+	// the C3 peer check would re-fire on a second Normalize pass,
+	// breaking idempotence.
 	if l, ok := applySplitLink(lines, opts); ok { // V8
 		lines = l
 		fired.add("V8")
+	}
+	// Whitespace hygiene next: trailing whitespace can throw off
+	// every line-pattern repair below (regex anchors, peer checks).
+	if l, ok := applyTrailingWhitespace(lines, opts); ok { // C5/C9
+		lines = l
+		fired.add("C5")
 	}
 	// Line-local space repairs.
 	if l, ok := applyATXHeaderSpace(lines, opts); ok { // V5
@@ -80,6 +92,19 @@ func Normalize(src string, opts Options) (string, []string) {
 	if l, ok := applyNumberedNoSpace(lines, opts); ok { // C4
 		lines = l
 		fired.add("C4")
+	}
+	// URL hygiene and inline structure.
+	if l, ok := applyURLUnicode(lines, opts); ok { // V7
+		lines = l
+		fired.add("V7")
+	}
+	if l, ok := applyTildeInWord(lines, opts); ok { // C1
+		lines = l
+		fired.add("C1")
+	}
+	if l, ok := applyBorderlessTable(lines, opts); ok { // C6
+		lines = l
+		fired.add("C6")
 	}
 	//
 	// Future pipeline stages (placeholder list; concrete repairs land
