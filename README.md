@@ -63,7 +63,7 @@ behavior across the flip.
 
 ### LLM input repairs
 
-The converter runs a pre-parse normalizer that auto-repairs 13
+The converter runs a pre-parse normalizer that auto-repairs 14
 evidenced LLM-emission patterns before goldmark sees the input:
 
 - **V1–V4**: unclosed emphasis, inline code, fenced code, and
@@ -78,6 +78,11 @@ evidenced LLM-emission patterns before goldmark sees the input:
   preserved).
 - **C6**: borderless GFM tables get leading/trailing pipes.
 - **C7**: short table rows padded to match the header column count.
+- **C11**: Unicode bullet markers (`•`/`◦`/`▪`/`●`/… instead of `-`)
+  rewritten so the list parses instead of collapsing to one inline
+  paragraph. A companion goldmark paragraph transformer catches
+  exotic/ambiguous markers (`★`/`▶`/`→`/`·`) structurally, on peer
+  evidence. See the catalog's "Two-layer bullet handling".
 - **R8**: `<br>` tags converted to newlines (or spaces inside table
   cells).
 
@@ -148,7 +153,7 @@ likelihood):
    ```python
    chat.postMessage(channel=..., blocks=resp.blocks, text=resp.text_fallback)
    ```
-2. **Malformed LLM input.** The library auto-repairs 13 common
+2. **Malformed LLM input.** The library auto-repairs 14 common
    LLM-emission patterns (see [LLM input repairs](#llm-input-repairs)
    above and the [catalog doc](docs/llm-input-recovery.md)). The
    response's `warnings` field reports which repairs fired.

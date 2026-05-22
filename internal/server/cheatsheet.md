@@ -101,12 +101,13 @@ Three causes, in order of likelihood:
    array as `chat.postMessage(blocks=...)` and the returned
    `text_fallback` as `chat.postMessage(text=...)`. Never put the
    markdown source in either field.
-2. **The LLM input was malformed.** This server auto-repairs 13
+2. **The LLM input was malformed.** This server auto-repairs 14
    evidenced LLM-emission patterns (link split across lines,
    unclosed emphasis / inline code / fenced code, ATX header
-   without space, bullet/numbered list without space, smart quotes
-   / em-dashes in URLs, single-tilde in word, borderless tables,
-   `<br>` tags, plus padded short table rows). The response's
+   without space, bullet/numbered list without space, Unicode
+   bullet markers like `•`/`◦`/`★` used instead of `-`, smart
+   quotes / em-dashes in URLs, single-tilde in word, borderless
+   tables, `<br>` tags, plus padded short table rows). The response's
    `warnings` field reports the codes that fired (e.g.
    `normalized input (LLM-mistake repairs fired: V8, C3)`). The
    full catalog with evidence and examples lives at
