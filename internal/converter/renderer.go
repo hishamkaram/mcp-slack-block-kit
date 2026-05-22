@@ -10,6 +10,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 
 	"github.com/hishamkaram/mcp-slack-block-kit/internal/converter/normalizer"
 )
@@ -65,6 +66,13 @@ func New(opts Options) (*Renderer, error) {
 			// Source-position attributes let us produce useful error messages
 			// in lint/validate output that point back at the original markdown.
 			parser.WithAttribute(),
+			// Rescue lists an LLM emitted with a non-ASCII bullet marker
+			// (•, ◦, ★, →, …) that goldmark would otherwise parse as one
+			// inline paragraph. Priority 150 runs after the link-reference
+			// transformer (100). See unicode_bullet_transformer.go.
+			parser.WithParagraphTransformers(
+				util.Prioritized(unicodeBulletTransformer{}, 150),
+			),
 		),
 	)
 

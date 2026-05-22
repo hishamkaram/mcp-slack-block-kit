@@ -117,3 +117,33 @@ func TestProperty_PreservesWellFormedCodeBlocks(t *testing.T) {
 		t.Fatalf("code block contents mutated: %v", err)
 	}
 }
+
+// TestProperty_C11_NoLineLeadingBulletGlyphSurvives: for any list built
+// with a Unicode bullet marker, no output line still opens with a
+// recognized bullet glyph — C11 must have rewritten every one to the
+// canonical `-`. Guards against the rewrite missing rows in a multi-line
+// list. We construct the list from an arbitrary payload (sanitized of
+// structure-forming bytes) so the property exercises varied content
+// without modelling fences/tables.
+func TestProperty_C11_NoLineLeadingBulletGlyphSurvives(t *testing.T) {
+	f := func(payload string) bool {
+		if strings.ContainsAny(payload, "\n\r`|\t") {
+			return true
+		}
+		payload = strings.TrimSpace(payload)
+		if payload == "" {
+			return true
+		}
+		in := "• " + payload + "\n• " + payload + "\n◦ " + payload
+		out, _ := Normalize(in, Options{})
+		for _, ln := range strings.Split(out, "\n") {
+			if unicodeBullet.MatchString(ln) {
+				return false
+			}
+		}
+		return true
+	}
+	if err := quick.Check(f, quickConfig); err != nil {
+		t.Fatalf("a unicode bullet survived normalization: %v", err)
+	}
+}

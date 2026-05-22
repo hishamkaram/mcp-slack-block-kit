@@ -64,6 +64,29 @@ All repairs:
 | **C5** / **C9** | Trailing whitespace stripped (preserves the two-trailing-spaces CommonMark hard-break marker). | on |
 | **C6** | Borderless table: adds leading/trailing `\|` to rows missing them. | on |
 | **C7** | Table column-count mismatch: data rows shorter than the header are padded with empty cells (post-AST, in `internal/converter/tables.go`). | on |
+| **C11** | Unicode bullet marker → `-`. A line-leading non-ASCII bullet glyph (`•` `‣` `⁃` `⁌` `⁍` `∙` `◦` `▪` `▫` `●` `○` `■` `□` `◆` `◇`) + space becomes a canonical `- ` marker so goldmark parses a real list instead of a single inline paragraph. No peer guard — these glyphs never open prose. | on |
+
+### Two-layer bullet handling (C11 + parser transformer)
+
+LLMs frequently emit lists with a Unicode bullet marker (pasted from
+rich text, or trained on rendered output). goldmark recognizes only
+`-`/`*`/`+`, so such a list collapses into one paragraph and renders
+inline in Slack (every item run together on a single line). This is
+repaired in two complementary layers:
+
+1. **Normalizer C11 (above):** pre-parse, converts the *unambiguous*
+   curated bullet glyphs to `-` and surfaces a `C11` warning. Because
+   it runs before goldmark, the repaired list gets full native
+   nesting/continuation handling.
+2. **goldmark paragraph transformer** (`internal/converter/unicode_bullet_transformer.go`):
+   the structural backstop. It detects, by Unicode category
+   (Other-Punctuation / Other-Symbol / Math-Symbol, non-ASCII), any
+   *other* bullet-like marker — e.g. `★`, `▶`, `→`, `·` — that reached
+   goldmark as a paragraph, and rewrites it into a native list. To stay
+   safe with these more ambiguous markers it requires **peer evidence**
+   (≥2 consecutive lines sharing the same marker), so a lone symbol-led
+   line stays prose. Dashes (`–`/`—`, category Pd) are excluded so
+   attributions ("— Einstein") are never mistaken for a list.
 
 ### R-tier (rare)
 

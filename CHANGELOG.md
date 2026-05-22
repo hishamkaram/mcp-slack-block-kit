@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **converter**: lists emitted by an LLM with a non-ASCII bullet marker
+  (e.g. `•`, `◦`, `▪`, `★`, `▶`, `→`) are now recognized as real lists
+  instead of collapsing into a single inline paragraph (every item run
+  together on one line in Slack). Two complementary layers:
+  - **normalizer C11** (pre-parse, always on): rewrites a curated set of
+    *unambiguous* line-leading bullet glyphs (`• ‣ ⁃ ⁌ ⁍ ∙ ◦ ▪ ▫ ● ○ ■ □
+    ◆ ◇`) to the canonical `- ` marker and surfaces a `C11` warning, so
+    the repaired list gets goldmark's native nesting/continuation
+    handling.
+  - **goldmark paragraph transformer** (`internal/converter/unicode_bullet_transformer.go`):
+    a structural backstop that detects any other bullet-like marker by
+    Unicode category (Po/So/Sm, non-ASCII) and rewrites the paragraph
+    into a native list. Requires peer evidence (≥2 consecutive
+    same-marker lines) so a lone symbol-led line stays prose; dashes
+    (en/em, category Pd) are excluded so attributions ("— Einstein") are
+    never mistaken for a list.
+  See `docs/llm-input-recovery.md` ("Two-layer bullet handling").
 
 ### Changed
 

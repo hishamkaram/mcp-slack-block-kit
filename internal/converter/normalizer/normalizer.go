@@ -102,6 +102,16 @@ func Normalize(src string, opts Options) (string, []string) {
 		lines = l
 		fired.add("V5")
 	}
+	// Unicode bullet glyphs (•, ◦, ▪, ●, …) → canonical `- `. MUST run
+	// before C3: it emits a well-formed `- ` marker (dash + space), so C3
+	// never re-touches the line, and goldmark's native list parser then
+	// handles nesting/continuation for the repaired list. Decorative or
+	// exotic markers outside this curated set are caught structurally by
+	// the goldmark paragraph transformer in internal/converter (Layer 1).
+	if l, ok := applyUnicodeBullet(lines, opts); ok { // C11
+		lines = l
+		fired.add("C11")
+	}
 	if l, ok := applyBulletNoSpace(lines, opts); ok { // C3
 		lines = l
 		fired.add("C3")

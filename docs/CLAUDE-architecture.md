@@ -59,6 +59,16 @@ Walks goldmark's AST and emits `[]slack.Block`. Files:
   `renderer.go::ConvertWithWarnings` before goldmark sees the input,
   so both modes benefit. Known limitation: not AST-aware at pre-parse
   time, so `<url|label>` inside a code span is still rewritten.
+- `unicode_bullet_transformer.go` — a goldmark `ParagraphTransformer`
+  (registered in `renderer.go::New` at priority 150) that rescues lists
+  an LLM marked with a non-ASCII bullet glyph (`★`, `▶`, `→`, `·`, …)
+  that goldmark would otherwise leave as one inline paragraph. It runs
+  before inline parsing, so each rebuilt list item's text is inline-
+  parsed normally. Layer 1 of the two-layer bullet fix; Layer 2 is the
+  normalizer's C11 pattern (curated, unambiguous glyphs). The
+  transformer requires peer evidence (≥2 same-marker lines) and detects
+  markers by Unicode category (Po/So/Sm), excluding dashes (Pd). See
+  `docs/llm-input-recovery.md` "Two-layer bullet handling".
 
 ### `internal/converter/` (cont.)
 

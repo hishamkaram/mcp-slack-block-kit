@@ -16,6 +16,12 @@ func FuzzNormalize(f *testing.F) {
 		"# Heading\n- [a]\n(b)",              // V8
 		"#Heading without space",             // V5
 		"-item without space",                // C3
+		"• a\n• b",                           // C11 unicode bullet
+		"  ◦ nested\n  ◦ items",              // C11 indented white bullet
+		"Lead-in:\n● one\n● two",             // C11 with lead-in line
+		"■ box bullet\n■ second",             // C11 geometric bullet
+		"→ arrow not in C11 set",             // ambiguous marker (transformer's job)
+		"· interpunct not in C11 set",        // ambiguous marker (transformer's job)
 		"1.no space",                         // C4
 		"[link](https://x.com/v2–migration)", // V7
 		"trailing whitespace   \n",           // C5/C9
