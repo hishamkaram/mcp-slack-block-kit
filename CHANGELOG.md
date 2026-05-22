@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+---
+
+## [0.5.0] - 2026-05-22
+
+### Added
 - **converter**: lists emitted by an LLM with a non-ASCII bullet marker
   (e.g. `•`, `◦`, `▪`, `★`, `▶`, `→`) are now recognized as real lists
   instead of collapsing into a single inline paragraph (every item run
@@ -462,7 +472,8 @@ cosign verify-blob \
 - Slack Block Kit Builder URLs above ~8 KiB get unreliable in
   browsers/Slack — the preview tool flags those as `Truncated: true`.
 
-[Unreleased]: https://github.com/hishamkaram/mcp-slack-block-kit/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hishamkaram/mcp-slack-block-kit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hishamkaram/mcp-slack-block-kit/releases/tag/v0.5.0
 [0.4.0]: https://github.com/hishamkaram/mcp-slack-block-kit/releases/tag/v0.4.0
 [0.3.0]: https://github.com/hishamkaram/mcp-slack-block-kit/releases/tag/v0.3.0
 [0.2.1]: https://github.com/hishamkaram/mcp-slack-block-kit/releases/tag/v0.2.1
